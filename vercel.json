@@ -1,13 +1,16 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "{assets,data,mithrandir}/**",
-      "maxDuration": 60
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": ["mithrandir/**", "assets/**", "data/**"],
+        "maxDuration": 60
+      }
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "api/index.py" }
   ],
   "crons": [
     { "path": "/api/cron", "schedule": "0 8 * * *" }
