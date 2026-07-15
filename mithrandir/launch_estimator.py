@@ -169,7 +169,10 @@ def _ai_estimate(ai: AIClient, device: str, brand: str, family: str,
         return None
 
 
-def build_calendar(cfg: Config | None = None, today: date | None = None) -> list[dict]:
+def build_calendar(cfg: Config | None = None, today: date | None = None,
+                   with_overrides: bool = True) -> list[dict]:
+    """Monta o calendario. Com with_overrides=False gera a base (sem intel), para
+    depois aplicar a intel de forma barata via apply_overrides_to()."""
     cfg = cfg or load_config()
     today = today or date.today()
     ai = AIClient(cfg.ai)
@@ -193,13 +196,14 @@ def build_calendar(cfg: Config | None = None, today: date | None = None) -> list
                                        "family": parsed.family, "seasonal": None})
         d["device"] = name
 
-    from .overrides import load_overrides
-    for ov in load_overrides():
-        canon = ov["canonical"]
-        devices.setdefault(canon, {"device": ov["device"],
-                                   "brand": canonicalize(ov["device"]).brand,
-                                   "family": canonicalize(ov["device"]).family,
-                                   "seasonal": None})
+    if with_overrides:
+        from .overrides import load_overrides
+        for ov in load_overrides():
+            canon = ov["canonical"]
+            devices.setdefault(canon, {"device": ov["device"],
+                                       "brand": canonicalize(ov["device"]).brand,
+                                       "family": canonicalize(ov["device"]).family,
+                                       "seasonal": None})
 
     items = list(devices.items())
     sig_map = {canon: signals_for(canon, cache) for canon, _ in items}
@@ -231,7 +235,7 @@ def build_calendar(cfg: Config | None = None, today: date | None = None) -> list
             iso, precision, conf, src, rationale = _heuristic(signals, seasonal, today)
             status = _status_for(iso, today)
 
-        ov = override_for(canon)
+        ov = override_for(canon) if with_overrides else None
 
         # Descarta ruido: device so-sazonal (sem noticia e sem intel) que nao aponta
         # para uma data futura -> ou ja passou, ou nem data tem. Mantem noticias/intel.
@@ -265,3 +269,48 @@ def build_calendar(cfg: Config | None = None, today: date | None = None) -> list
     # ordena: com data primeiro (cronologico), incertos por ultimo
     estimates.sort(key=lambda e: (e.estimated_date is None, e.estimated_date or "9999"))
     return [e.to_dict() for e in estimates]
+
+
+def _norm_iso(iso):
+    return (iso + "-01") if (iso and len(iso) == 7) else iso
+
+
+def _apply_override(est: dict, ov: dict, today: date) -> dict:
+    iso = _norm_iso(ov.get("date") or est.get("estimated_date"))
+    est["estimated_date"] = iso
+    est["confidence"] = round(ov.get("confidence", 0.9), 2)
+    est["source"] = "intel"
+    est["rationale"] = ov.get("note") or "Informado pelo analista."
+    est["date_precision"] = "day" if (iso and len(iso) == 10 and not iso.endswith("-01")) else "month"
+    est["status"] = _status_for(iso, today)
+    return est
+
+
+def _estimate_from_override(ov: dict, today: date) -> dict:
+    p = canonicalize(ov["device"])
+    iso = _norm_iso(ov.get("date"))
+    return {
+        "canonical": ov["canonical"], "device": ov["device"],
+        "brand": p.brand, "family": p.family,
+        "estimated_date": iso,
+        "date_precision": "day" if (iso and len(iso) == 10 and not iso.endswith("-01")) else "month",
+        "confidence": round(ov.get("confidence", 0.9), 2),
+        "status": _status_for(iso, today), "source": "intel",
+        "rationale": ov.get("note") or "Informado pelo analista.", "evidence": [],
+    }
+
+
+def apply_overrides_to(base: list[dict], today: date | None = None) -> list[dict]:
+    """Aplica a intel atual sobre um calendario base (sem chamar IA). Barato."""
+    from .overrides import load_overrides
+    today = today or date.today()
+    by = {e["canonical"]: dict(e) for e in (base or [])}
+    for ov in load_overrides():
+        c = ov["canonical"]
+        if c in by:
+            _apply_override(by[c], ov, today)
+        else:
+            by[c] = _estimate_from_override(ov, today)
+    out = list(by.values())
+    out.sort(key=lambda e: (e["estimated_date"] is None, e["estimated_date"] or "9999"))
+    return out

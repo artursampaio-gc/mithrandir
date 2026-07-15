@@ -10,13 +10,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .. import store
 from ..config import DATA_DIR
 
 NEWS_CACHE_PATH = DATA_DIR / "news_cache.json"
 
 
-def load_news_cache_raw(path: Path = NEWS_CACHE_PATH) -> dict:
-    """Le o cache completo, incluindo a chave _meta."""
+def _load_file(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
@@ -25,7 +25,22 @@ def load_news_cache_raw(path: Path = NEWS_CACHE_PATH) -> dict:
         return {}
 
 
+def load_news_cache_raw(path: Path = NEWS_CACHE_PATH) -> dict:
+    """Le o cache completo, incluindo a chave _meta.
+
+    No Supabase, usa o cache gravado; se ainda vazio, cai no arquivo semeado
+    (empacotado no deploy) como base inicial.
+    """
+    if store.is_supabase():
+        cached = store.get_cached("news_cache")
+        return cached if cached else _load_file(path)
+    return _load_file(path)
+
+
 def save_news_cache(cache: dict, path: Path = NEWS_CACHE_PATH) -> None:
+    if store.is_supabase():
+        store.set_cached("news_cache", cache)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 

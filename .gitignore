@@ -4,8 +4,12 @@ config.json
 # Estado/execucao local (fica local ou vai para o Supabase)
 data/overrides.json
 data/settings.json
+data/app_cache.json
 data/mithrandir.db
 output/
+
+# Vercel
+.vercel/
 
 # Ferramentas locais
 .claude/settings.local.json

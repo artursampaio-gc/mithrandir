@@ -103,5 +103,8 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
                 unit_cost=st["unit_cost"])
 
     ranked = rank_candidates(list(candidates.values()))
-    save_run(ranked, cfg.mock_mode)
+    try:
+        save_run(ranked, cfg.mock_mode)  # historico local (ignorado em FS read-only)
+    except Exception:
+        pass
     return ranked

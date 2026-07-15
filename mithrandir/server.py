@@ -9,41 +9,55 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import store
 from .ai.proxy import AIClient
 from .config import ROOT, load_config
 from .intel_parser import parse_intel
-from .launch_estimator import build_calendar, clear_ai_cache
+from .launch_estimator import apply_overrides_to, build_calendar, clear_ai_cache
 from .overrides import add_override, delete_override, load_overrides
 from .pipeline import run_pipeline
 from .settings import load_settings, save_settings
 
 _cfg = load_config()
-_candidates_cache: list[dict] = []
-_calendar_cache: list[dict] = []
-_ready = False
+
+
+# Compute (grava no store). Pesado (IA) = calendario; leve = candidatos e intel.
+
+def _rebuild_candidates() -> None:
+    store.set_cached("candidates", [c.to_dict() for c in run_pipeline(_cfg)])
 
 
 def _rebuild_calendar() -> None:
-    """Recalcula o calendario (usa a IA quando configurada, com cache). Sob demanda."""
-    global _calendar_cache
-    _calendar_cache = build_calendar(_cfg)
+    """Recalcula o calendario base (IA) e aplica a intel. Pesado — usar no cron/refresh."""
+    base = build_calendar(_cfg, with_overrides=False)
+    store.set_cached("calendar_base", base)
+    store.set_cached("calendar", apply_overrides_to(base))
+
+
+def _apply_intel() -> None:
+    """Reaplica a intel sobre o calendario base (barato, sem IA)."""
+    base = store.get_cached("calendar_base")
+    if base is None:
+        _rebuild_calendar()
+    else:
+        store.set_cached("calendar", apply_overrides_to(base))
 
 
 def _rebuild_all() -> None:
-    global _candidates_cache, _ready
-    _candidates_cache = [c.to_dict() for c in run_pipeline(_cfg)]
+    _rebuild_candidates()
     _rebuild_calendar()
-    _ready = True
 
 
 def _state() -> dict:
-    if not _ready:
+    cands = store.get_cached("candidates")
+    # Local: enquanto o bootstrap roda, sinaliza "carregando" (a UI tenta de novo).
+    if cands is None and not store.is_supabase():
         return {"loading": True}
     return {
         "mock_mode": _cfg.mock_mode,
         "ai_available": _cfg.ai.is_configured,
-        "candidates": _candidates_cache,
-        "calendar": _calendar_cache,
+        "candidates": cands or [],
+        "calendar": store.get_cached("calendar") or [],
         "overrides": load_overrides(),
         "settings": load_settings(),
     }
@@ -84,6 +98,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_asset("favicon.svg")
         elif self.path == "/assets/logo.svg":
             self._serve_asset("logo.svg")
+        elif self.path.split("?")[0] in ("/api/cron", "/api/cron/scout"):
+            self._run_cron()  # Vercel Cron chama via GET
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -100,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_intel(body)
         elif self.path == "/api/intel/delete":
             delete_override(int(body.get("id", -1)))
-            _rebuild_calendar()
+            _apply_intel()  # barato: reaplica intel sobre a base
             self._json({"ok": True, "state": _state()})
         elif self.path == "/api/refresh":
             clear_ai_cache()  # busca estimativas frescas da IA
@@ -108,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "state": _state()})
         elif self.path == "/api/settings":
             saved = save_settings(body)
-            _rebuild_all()  # recalcula viabilidade com os novos custos
+            _rebuild_candidates()  # custos afetam a viabilidade (rapido, sem IA)
             self._json({"ok": True, "settings": saved, "state": _state()})
         elif self.path == "/api/agent":
             from .news_agent import refresh_news_cache
@@ -120,8 +136,22 @@ class Handler(BaseHTTPRequestHandler):
             clear_ai_cache()
             _rebuild_calendar()
             self._json({"ok": True, "updated": updated, "state": _state()})
+        elif self.path in ("/api/cron", "/api/cron/scout"):
+            self._run_cron()
         else:
             self._send(404, b"not found", "text/plain")
+
+    def _run_cron(self) -> None:
+        """Job diario: atualiza noticias (best-effort) + recalcula tudo."""
+        from .news_agent import refresh_news_cache
+        updated = []
+        try:
+            updated = refresh_news_cache(ai=AIClient(_cfg.ai))
+        except Exception as e:
+            print(f"[cron] agente falhou: {e}")
+        clear_ai_cache()
+        _rebuild_all()
+        self._json({"ok": True, "updated": updated})
 
     def _handle_intel(self, body: dict):
         device = (body.get("device") or "").strip()
@@ -133,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
         # Caminho manual: device explicito -> grava direto
         if device:
             entry = add_override(device, date, confidence, note or text)
-            _rebuild_calendar()
+            _apply_intel()
             self._json({"ok": True, "entry": entry, "state": _state()})
             return
 
@@ -148,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
         # respeita a data/confianca informadas na UI, se houver
         entry = add_override(parsed["device"], date or parsed["date"],
                              confidence, parsed["note"])
-        _rebuild_calendar()
+        _apply_intel()
         self._json({"ok": True, "entry": entry, "parsed": parsed, "state": _state()})
 
 

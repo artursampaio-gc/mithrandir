@@ -28,17 +28,29 @@ class TestExtractDates(unittest.TestCase):
 
 class TestCalendar(unittest.TestCase):
     def test_calendario_gera_estimativas(self):
-        cfg = load_config()
-        cfg.ai.api_key = ""  # forca a heuristica (deterministico, sem rede)
-        cal = build_calendar(cfg, today=date(2026, 7, 9))
+        # Fixture controlado (nao depende do news_cache.json em disco, que muda)
+        from mithrandir import launch_estimator as le
+        fixture = {
+            "SAMSUNG S26 FE": {"device": "Samsung Galaxy S26 FE", "signals": [
+                {"source": "x", "text": "lancamento esperado para setembro de 2026", "url": ""}]},
+            "XIAOMI NOTE 15": {"device": "Xiaomi Redmi Note 15", "signals": [
+                {"source": "x", "text": "lancado no Brasil em 21 de janeiro de 2026", "url": ""}]},
+        }
+        orig = le.load_news_cache
+        le.load_news_cache = lambda *a, **k: dict(fixture)
+        try:
+            cfg = load_config()
+            cfg.ai.api_key = ""  # forca a heuristica (deterministico, sem rede)
+            cal = build_calendar(cfg, today=date(2026, 7, 9), with_overrides=False)
+        finally:
+            le.load_news_cache = orig
         self.assertTrue(cal)
         by_dev = {e["canonical"]: e for e in cal}
         # S26 FE: noticias apontam setembro/2026 -> previsto
-        self.assertIn("SAMSUNG S26 FE", by_dev)
         s26 = by_dev["SAMSUNG S26 FE"]
         self.assertEqual(s26["estimated_date"][:7], "2026-09")
         self.assertEqual(s26["status"], "previsto")
-        # Note 15 ja lancou em jan/2026 -> corrigido para "lancado"
+        # Note 15 ja lancou em jan/2026 -> "lancado"
         self.assertEqual(by_dev["XIAOMI NOTE 15"]["status"], "lancado")
 
 

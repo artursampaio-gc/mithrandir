@@ -1,0 +1,2 @@
+# Mithrandir usa apenas a biblioteca padrao do Python (sem dependencias externas).
+# Arquivo presente para o Vercel detectar o runtime Python.
