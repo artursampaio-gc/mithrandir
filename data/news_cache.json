@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "descricao": "Cache de sinais de noticias por device (chave canonica). Preenchido pelo agente (news_agent.py) ou por busca manual. Em producao o agente diario reabastece via busca online + proxy de IA.",
+    "seeded_at": "2026-07-09"
+  },
+  "SAMSUNG S26 FE": {
+    "device": "Samsung Galaxy S26 FE",
+    "signals": [
+      {"source": "PhoneArena", "url": "https://www.phonearena.com/galaxy-s26-fe-release-date-price-features-news", "text": "Galaxy S26 FE release date expected September or October 2026, following the S25 FE launched in September 2025."},
+      {"source": "4gnews", "url": "https://4gnews.pt/samsung-galaxy-s26-fe-modelo-premium-acessivel-chega-no-final-do-verao/", "text": "Samsung Galaxy S26 FE deve chegar no final do verao, ou seja, setembro/outubro de 2026."},
+      {"source": "Canaltech", "url": "https://canaltech.com.br/smartphone/galaxy-s26-fe-vaza-em-certificacao-saiba-o-que-esperar-dopremium-acessivel/", "text": "Galaxy S26 FE (SM-S741) surge em certificacao; lancamento esperado para setembro de 2026."}
+    ]
+  },
+  "MOTOROLA G96": {
+    "device": "Motorola Moto G96",
+    "signals": [
+      {"source": "TudoCelular", "url": "https://www.tudocelular.com/mercado/noticias/n235474/motorola-motog96-tela-snapdragon-specs-confirmadas.html", "text": "Moto G96 teve tela, Snapdragon 7s Gen 2 e cores confirmadas; sem data oficial de lancamento no Brasil."},
+      {"source": "GSMArena", "url": "https://www.gsmarena.com/motorola_g96_5g-13989.php", "text": "Motorola G96 announced July 2025 in India; Brazil launch not confirmed."}
+    ]
+  },
+  "XIAOMI NOTE 15": {
+    "device": "Xiaomi Redmi Note 15",
+    "signals": [
+      {"source": "TechTudo", "url": "https://www.techtudo.com.br/guia/2026/01/redmi-note-15-5g-preco-e-ficha-tecnica-do-celular-custo-beneficio-da-xiaomi-edmobile.ghtml", "text": "Redmi Note 15 5G foi lancado no Brasil em 21 de janeiro de 2026 por R$ 3.399."},
+      {"source": "Diario de Pernambuco", "url": "https://www.diariodepernambuco.com.br/tecnologia/2026/01/11705914-xiaomi-lanca-serie-com-tres-modelos-do-redmi-note-15-no-brasil.html", "text": "Xiaomi lancou a serie Redmi Note 15 no Brasil em janeiro de 2026 com tres modelos."}
+    ]
+  },
+  "APPLE 18 PRO": {
+    "device": "Apple iPhone 18 Pro",
+    "signals": [
+      {"source": "Forbes Brasil", "url": "https://forbes.com.br/forbes-tech/2026/06/como-o-wwdc-2026-sinaliza-os-detalhes-do-novo-iphone-18-previsto-para-setembro/", "text": "iPhone 18 Pro e Pro Max previstos para setembro de 2026, com evento provavel em 9 de setembro de 2026."},
+      {"source": "Exame", "url": "https://exame.com/tecnologia/iphone-18-deve-chegar-mais-caro-e-dividido-em-dois-lancamentos-apontam-rumores/", "text": "Apple deve dividir o lancamento: modelos Pro em setembro de 2026 e o iPhone 18 base/18e apenas em 2027."}
+    ]
+  },
+  "APPLE 17 E": {
+    "device": "Apple iPhone 17e",
+    "signals": [
+      {"source": "Blog do iPhone", "url": "https://blogdoiphone.com/ofertas/iphone-17e-venda-brasil/", "text": "iPhone 17e ja comecou a ser vendido no Brasil, com lancamento em 13 de marco de 2026."},
+      {"source": "Seu Dinheiro", "url": "https://www.seudinheiro.com/2026/empresas/iphone-17e-ja-tem-data-de-lancamento-prevista-veja-quando-ele-chega-e-quanto-deve-custar/", "text": "iPhone 17e entrou em pre-venda no Brasil em 11 de marco de 2026, a partir de R$ 5.799."}
+    ]
+  }
+}

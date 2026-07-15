@@ -1,0 +1,17 @@
+# Configuracao com segredos (NUNCA versionar)
+config.json
+
+# Estado/execucao local (fica local ou vai para o Supabase)
+data/overrides.json
+data/settings.json
+data/mithrandir.db
+output/
+
+# Ferramentas locais
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

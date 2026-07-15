@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mithrandir — Cronograma de Implementação</title>
+<style>
+  :root{
+    --indigo:#4338ca; --indigo-d:#312e81; --indigo-l:#eef2ff;
+    --teal:#0d9488; --teal-l:#ccfbf1;
+    --amber:#d97706; --amber-l:#fef3c7;
+    --violet:#7c3aed; --violet-l:#ede9fe;
+    --green:#059669; --green-l:#d1fae5;
+    --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc; --card:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.5;-webkit-font-smoothing:antialiased;padding:32px 20px}
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* Header */
+  header{background:linear-gradient(135deg,var(--indigo-d),var(--indigo));color:#fff;border-radius:16px;
+    padding:32px 36px;position:relative;overflow:hidden}
+  header::after{content:"";position:absolute;right:-40px;top:-40px;width:220px;height:220px;
+    background:radial-gradient(circle,rgba(255,255,255,.12),transparent 70%)}
+  .eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:600;opacity:.85}
+  header h1{font-size:34px;font-weight:800;margin:6px 0 4px;letter-spacing:-.02em}
+  header p.tag{font-size:15px;opacity:.9;max-width:640px}
+  .meta{display:flex;flex-wrap:wrap;gap:14px;margin-top:22px}
+  .meta .chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
+    border-radius:10px;padding:10px 14px;backdrop-filter:blur(4px)}
+  .meta .chip .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.8}
+  .meta .chip .v{font-size:16px;font-weight:700;margin-top:2px}
+  .meta .chip.hl{background:var(--amber);border-color:var(--amber)}
+
+  section{margin-top:28px}
+  h2{font-size:19px;font-weight:750;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+  h2 .num{background:var(--indigo);color:#fff;width:26px;height:26px;border-radius:8px;
+    display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;
+    box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .obj{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .obj .box{background:var(--indigo-l);border-radius:12px;padding:16px 18px}
+  .obj .box b{display:block;font-size:14px;color:var(--indigo-d);margin-bottom:4px}
+  .obj .box span{font-size:13.5px;color:var(--ink)}
+
+  /* Gantt */
+  .gantt{overflow-x:auto}
+  table.g{border-collapse:collapse;width:100%;min-width:840px;font-size:13px}
+  table.g th,table.g td{border:1px solid var(--line);padding:0}
+  table.g thead th{background:#f1f5f9;font-weight:600;color:var(--muted);text-align:center;
+    padding:6px 4px;font-size:11.5px;line-height:1.25}
+  table.g thead th.wk{background:var(--indigo);color:#fff;font-size:12px;letter-spacing:.04em}
+  table.g th.lane{text-align:left;padding:10px 12px;width:220px;background:#fff;color:var(--ink);
+    font-weight:650;font-size:13px}
+  table.g td.day{height:38px;position:relative}
+  .bar{position:absolute;top:8px;bottom:8px;left:3px;right:3px;border-radius:6px}
+  .b-indigo{background:var(--indigo)} .b-teal{background:var(--teal)}
+  .b-amber{background:var(--amber)} .b-violet{background:var(--violet)}
+  .b-green{background:var(--green)}
+  .b-soft{opacity:.4}
+  .ms{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(45deg);
+    width:13px;height:13px;background:#fff;border:2.5px solid var(--amber);border-radius:3px;z-index:2}
+  td.weekend{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 5px,#eef2f7 5px,#eef2f7 10px)}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend i{width:16px;height:10px;border-radius:3px;display:inline-block}
+  .legend .dia{width:12px;height:12px;transform:rotate(45deg);background:#fff;border:2.5px solid var(--amber);border-radius:2px}
+
+  /* Milestones */
+  .ms-list{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ms-item{display:flex;gap:12px;align-items:flex-start;background:var(--amber-l);
+    border:1px solid #fcd34d;border-radius:11px;padding:13px 15px}
+  .ms-item .dot{flex:none;width:34px;height:34px;border-radius:9px;background:var(--amber);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+  .ms-item .t{font-weight:700;font-size:13.5px}
+  .ms-item .d{font-size:12px;color:var(--muted)}
+
+  /* Detailed table */
+  table.det{border-collapse:collapse;width:100%;font-size:13px;background:var(--card);
+    border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+  table.det th{background:var(--indigo-d);color:#fff;text-align:left;padding:11px 13px;font-size:12px;
+    text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  table.det td{padding:11px 13px;border-top:1px solid var(--line);vertical-align:top}
+  table.det tr.wk td{background:var(--indigo);color:#fff;font-weight:700;font-size:12.5px;
+    text-transform:uppercase;letter-spacing:.06em}
+  table.det tbody tr:nth-child(even):not(.wk){background:#fbfcfe}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .p-ind{background:var(--indigo-l);color:var(--indigo-d)}
+  .p-teal{background:var(--teal-l);color:#0f766e}
+  .p-amber{background:var(--amber-l);color:#b45309}
+  .p-violet{background:var(--violet-l);color:#6d28d9}
+  .p-green{background:var(--green-l);color:#047857}
+  .date{font-weight:700;white-space:nowrap}
+  .date small{display:block;font-weight:500;color:var(--muted);font-size:11px}
+  .test{color:#047857;font-size:12.5px}
+  .test::before{content:"✓ ";font-weight:800}
+
+  /* two-col info */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .note{border-left:4px solid var(--amber);background:var(--amber-l);border-radius:0 10px 10px 0;
+    padding:14px 18px;font-size:13px}
+  .note b{color:#b45309}
+  .scope ul{list-style:none;font-size:13px}
+  .scope li{padding:5px 0 5px 22px;position:relative}
+  .scope li::before{content:"";position:absolute;left:0;top:11px;width:8px;height:8px;border-radius:50%}
+  .scope.in li::before{background:var(--green)}
+  .scope.next li::before{background:var(--violet)}
+  .scope h3{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+
+  footer{margin-top:34px;text-align:center;color:var(--muted);font-size:12px;
+    border-top:1px solid var(--line);padding-top:18px}
+
+  @media print{
+    body{background:#fff;padding:0}
+    header{border-radius:0}
+    .card,.ms-item,table.det{box-shadow:none}
+    section{break-inside:avoid}
+    table.det tr,.ms-item{break-inside:avoid}
+  }
+  @media(max-width:760px){
+    .obj,.ms-list,.two{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Projeto · Desenvolvimento de Produto — Gocase</div>
+    <h1>🧙 Mithrandir</h1>
+    <p class="tag">Sistema de scouting automatizado de novos modelos de celular para priorização de desenvolvimento de capinhas. Cronograma de implementação do MVP.</p>
+    <div class="meta">
+      <div class="chip"><div class="k">Início</div><div class="v">Ter, 07/07/2026</div></div>
+      <div class="chip"><div class="k">Conclusão</div><div class="v">Sex, 17/07/2026</div></div>
+      <div class="chip hl"><div class="k">Prazo total</div><div class="v">2 semanas · 9 dias úteis</div></div>
+      <div class="chip"><div class="k">Responsável</div><div class="v">Artur Sampaio</div></div>
+      <div class="chip"><div class="k">Entrega</div><div class="v">MVP funcional + Dashboard</div></div>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="num">1</span>Objetivo</h2>
+    <div class="card">
+      <div class="obj">
+        <div class="box"><b>Antecipar lançamentos</b><span>Prever novos modelos pela sazonalidade do ano anterior (ex.: S25FE → S26FE).</span></div>
+        <div class="box"><b>Validar com a base</b><span>Cruzar com vendas de modelos similares no BI para priorizar ou descartar.</span></div>
+        <div class="box"><b>Capturar sucessos</b><span>Detectar disparos de venda nos marketplaces (caso Motorola G86) e rankear candidatos.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span>Linha do tempo (Gantt)</h2>
+    <div class="card gantt">
+      <table class="g">
+        <thead>
+          <tr>
+            <th class="lane" rowspan="2">Frente de trabalho</th>
+            <th class="wk" colspan="4">Semana 1 · 07–10/07</th>
+            <th class="wk" colspan="5">Semana 2 · 13–17/07</th>
+          </tr>
+          <tr>
+            <th>Ter<br>07/07</th><th>Qua<br>08/07</th><th>Qui<br>09/07</th><th>Sex<br>10/07</th>
+            <th>Seg<br>13/07</th><th>Ter<br>14/07</th><th>Qua<br>15/07</th><th>Qui<br>16/07</th><th>Sex<br>17/07</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th class="lane">Acessos &amp; Descoberta</th>
+            <td class="day"><span class="bar b-indigo"></span></td>
+            <td class="day"><span class="bar b-indigo"></span></td>
+            <td class="day"><span class="bar b-indigo b-soft"></span></td>
+            <td class="day"><span class="bar b-indigo b-soft"></span></td>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+          </tr>
+          <tr>
+            <th class="lane">Coleta &amp; Modelagem de Dados</th>
+            <td class="day"></td>
+            <td class="day"><span class="bar b-teal"></span></td>
+            <td class="day"><span class="bar b-teal"></span></td>
+            <td class="day"><span class="bar b-teal"></span></td>
+            <td class="day"><span class="bar b-teal"></span></td>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+          </tr>
+          <tr>
+            <th class="lane">Motor de Score &amp; Regras</th>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+            <td class="day"><span class="bar b-amber"></span></td>
+            <td class="day"><span class="bar b-amber"></span></td>
+            <td class="day"></td><td class="day"></td><td class="day"></td>
+          </tr>
+          <tr>
+            <th class="lane">Dashboard &amp; Automação</th>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+            <td class="day"><span class="bar b-violet"></span></td>
+            <td class="day"><span class="bar b-violet"></span></td>
+            <td class="day"></td>
+          </tr>
+          <tr>
+            <th class="lane">Testes &amp; Validação (contínuo)</th>
+            <td class="day"></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green b-soft"></span></td>
+            <td class="day"><span class="bar b-green"></span></td>
+            <td class="day"><span class="bar b-green"></span></td>
+          </tr>
+          <tr>
+            <th class="lane">Apresentação ao gestor</th>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+            <td class="day"></td><td class="day"></td><td class="day"></td><td class="day"></td>
+            <td class="day"><span class="bar b-indigo"></span></td>
+          </tr>
+          <tr>
+            <th class="lane" style="color:var(--amber)">◆ Marcos</th>
+            <td class="day"></td>
+            <td class="day"><span class="ms" title="M1"></span></td>
+            <td class="day"></td>
+            <td class="day"><span class="ms" title="M2"></span></td>
+            <td class="day"></td>
+            <td class="day"><span class="ms" title="M3"></span></td>
+            <td class="day"><span class="ms" title="M4"></span></td>
+            <td class="day"></td>
+            <td class="day"><span class="ms" title="M5"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="legend">
+        <span><i class="b-indigo"></i>Acessos</span>
+        <span><i class="b-teal"></i>Dados</span>
+        <span><i class="b-amber"></i>Score</span>
+        <span><i class="b-violet"></i>Dashboard</span>
+        <span><i class="b-green"></i>Testes</span>
+        <span><i class="dia"></i>Marco (milestone)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span>Marcos de entrega</h2>
+    <div class="ms-list">
+      <div class="ms-item"><div class="dot">M1</div><div><div class="t">Acessos críticos garantidos</div><div class="d">Qua, 08/07 — BI + proxy de IA liberados e testados</div></div></div>
+      <div class="ms-item"><div class="dot">M2</div><div><div class="t">Dados fluindo e normalizados</div><div class="d">Sex, 10/07 — Mercado Livre + BI + calendário integrados</div></div></div>
+      <div class="ms-item"><div class="dot">M3</div><div><div class="t">Score com regra de negócio</div><div class="d">Ter, 14/07 — priorização + penalidades funcionando</div></div></div>
+      <div class="ms-item"><div class="dot">M4</div><div><div class="t">Dashboard navegável</div><div class="d">Qua, 15/07 — ranking + drill-down explicável</div></div></div>
+      <div class="ms-item" style="grid-column:1/-1;background:var(--green-l);border-color:#6ee7b7"><div class="dot" style="background:var(--green)">M5</div><div><div class="t">MVP homologado + Apresentação ao gestor ✅</div><div class="d">Sex, 17/07 — pipeline diário rodando, ranking validado com dados reais</div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">4</span>Passos de implementação e testes</h2>
+    <table class="det">
+      <thead>
+        <tr><th style="width:88px">Data</th><th>Passo de implementação</th><th style="width:130px">Frente</th><th style="width:34%">Teste / validação</th></tr>
+      </thead>
+      <tbody>
+        <tr class="wk"><td colspan="4">Semana 1 — Fundação, acessos e prova de dados</td></tr>
+        <tr>
+          <td class="date">Ter 07/07<small>Dia 1</small></td>
+          <td><b>Kickoff &amp; acessos.</b> Aprovar escopo com o gestor. Abrir pedidos de acesso: BI, proxy de IA, Marketplaces, TI e SecInfo.</td>
+          <td><span class="pill p-ind">Acessos</span></td>
+          <td class="test">Checklist de acessos criado e enviado; sponsor confirmado.</td>
+        </tr>
+        <tr>
+          <td class="date">Qua 08/07<small>Dia 2 · M1</small></td>
+          <td><b>Acesso a dados internos.</b> Conectar ao BI; mapear vendas de capinha por modelo/família. Obter credencial do proxy de IA.</td>
+          <td><span class="pill p-ind">Acessos</span> <span class="pill p-teal">Dados</span></td>
+          <td class="test">Consulta no BI retorna vendas de um modelo conhecido; chamada de teste ao proxy responde OK.</td>
+        </tr>
+        <tr>
+          <td class="date">Qui 09/07<small>Dia 3</small></td>
+          <td><b>Coleta de marketplace.</b> Credencial da API do Mercado Livre + 1º coletor de tração. Montar calendário histórico de lançamentos.</td>
+          <td><span class="pill p-teal">Dados</span></td>
+          <td class="test">Coletor puxa ranking/avaliações de um modelo real; calendário reproduz o caso S25FE → S26FE.</td>
+        </tr>
+        <tr>
+          <td class="date">Sex 10/07<small>Dia 4 · M2</small></td>
+          <td><b>Modelagem &amp; normalização.</b> Estrutura de dados (modelo, sinal, desempenho interno) e normalização de nomes com regras + IA.</td>
+          <td><span class="pill p-teal">Dados</span></td>
+          <td class="test">"Galaxy S26 FE" / "S26FE" / "S26 Fan Edition" resolvem para a mesma chave; SKU liga ao modelo do aparelho.</td>
+        </tr>
+
+        <tr class="wk"><td colspan="4">Semana 2 — MVP, score, dashboard e apresentação</td></tr>
+        <tr>
+          <td class="date">Seg 13/07<small>Dia 5</small></td>
+          <td><b>Motor de priorização v1.</b> Implementar a fórmula do score (previsão + similar interno + tração + momentum) com pesos validados.</td>
+          <td><span class="pill p-amber">Score</span></td>
+          <td class="test">Score reproduz manualmente 3 casos conhecidos (ex.: G86 pós-lançamento pontua alto).</td>
+        </tr>
+        <tr>
+          <td class="date">Ter 14/07<small>Dia 6 · M3</small></td>
+          <td><b>Regras de negócio.</b> Cruzamento candidato ↔ similar interno + penalidades (já temos capinha / família vendeu mal).</td>
+          <td><span class="pill p-amber">Score</span></td>
+          <td class="test">Modelo com capinha existente é penalizado; família de baixo desempenho é rebaixada no ranking.</td>
+        </tr>
+        <tr>
+          <td class="date">Qua 15/07<small>Dia 7 · M4</small></td>
+          <td><b>Dashboard v1.</b> Ranking de candidatos, filtros e drill-down explicável (decomposição do score + fontes).</td>
+          <td><span class="pill p-violet">Dashboard</span></td>
+          <td class="test">Ranking abre e ordena; drill-down mostra o porquê de cada candidato e suas fontes.</td>
+        </tr>
+        <tr>
+          <td class="date">Qui 16/07<small>Dia 8</small></td>
+          <td><b>Automação &amp; alertas.</b> Agendamento do job diário + alertas por limiar. Teste ponta a ponta.</td>
+          <td><span class="pill p-violet">Dashboard</span> <span class="pill p-green">Testes</span></td>
+          <td class="test">Job diário roda sozinho e atualiza o ranking; alerta dispara no limiar; resiliência: 1 fonte cai e o resto segue.</td>
+        </tr>
+        <tr>
+          <td class="date">Sex 17/07<small>Dia 9 · M5</small></td>
+          <td><b>Homologação &amp; apresentação.</b> Ajustes finais, validação do ranking com dados reais e apresentação ao gestor.</td>
+          <td><span class="pill p-green">Testes</span> <span class="pill p-ind">Entrega</span></td>
+          <td class="test">Ranking revisado e homologado com você; MVP aprovado; apresentação realizada.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="num">5</span>Escopo, premissas e próximos passos</h2>
+    <div class="two">
+      <div class="card scope in">
+        <h3>✅ Dentro do MVP (2 semanas)</h3>
+        <ul>
+          <li>Fonte de marketplace: <b>Mercado Livre</b> (API oficial)</li>
+          <li>Cruzamento com a base interna via <b>BI</b></li>
+          <li>Calendário de previsão sazonal</li>
+          <li>Score priorizado + regras de negócio</li>
+          <li>Dashboard com ranking e drill-down</li>
+          <li>Coleta diária automatizada + alertas</li>
+        </ul>
+      </div>
+      <div class="card scope next">
+        <h3>➡️ Próximas fases (pós-MVP)</h3>
+        <ul>
+          <li>Amazon BR, Magazine Luiza e Americanas</li>
+          <li>Contas de <b>seller</b> da Gocase como fonte oficial</li>
+          <li>Loop de feedback e recalibração de pesos</li>
+          <li>Ampliação de marcas e linhas cobertas</li>
+          <li>Métricas de acurácia e relatórios executivos</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <b>Premissa crítica do prazo:</b> as 2 semanas assumem que os acessos ao <b>BI</b> e ao <b>proxy de IA</b> sejam liberados nos 2 primeiros dias (M1). Atraso nesses acessos desloca o cronograma na mesma proporção. Todo uso de IA ocorre, obrigatoriamente, via proxy interno da empresa.
+    </div>
+  </section>
+
+  <footer>
+    Mithrandir · Cronograma de implementação do MVP · Gogroup / Gocase · Gerado em 07/07/2026
+  </footer>
+
+</div>
+</body>
+</html>

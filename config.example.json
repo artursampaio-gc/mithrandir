@@ -1,0 +1,12 @@
+{
+  "_comentario": "Copie para config.json e preencha quando os acessos sairem. Tudo tambem pode vir de variaveis de ambiente MITHRANDIR_*.",
+
+  "ai_base_url": "",
+  "ai_api_key": "",
+  "ai_model": "gpt-4o-mini",
+
+  "ml_access_token": "",
+  "ml_site_id": "MLB",
+
+  "force_mock": false
+}

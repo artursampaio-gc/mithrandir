@@ -1,0 +1,10 @@
+{
+  "_meta": "Vendas de capinha dos ultimos 6 meses por modelo de estudo (similar). Exemplo ate o BI real ser conectado. Ordem = 6 meses mais recentes.",
+  "SAMSUNG A55": [180, 205, 160, 240, 260, 210],
+  "SAMSUNG S25 FE": [120, 135, 110, 150, 168, 140],
+  "SAMSUNG S24 FE": [95, 110, 88, 130, 140, 120],
+  "MOTOROLA G85": [131, 111, 0, 226, 230, 140],
+  "MOTOROLA E14": [22, 18, 25, 15, 20, 17],
+  "XIAOMI NOTE 13 PRO": [160, 175, 150, 190, 210, 180],
+  "REALME C65": [14, 10, 18, 12, 9, 15]
+}
