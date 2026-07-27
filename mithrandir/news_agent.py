@@ -31,13 +31,87 @@ DEFAULT_WATCHLIST = [
 ]
 
 
+def watchlist_from_base(top_n: int = 16, recent_months: int = 3,
+                        per_brand: int = 4) -> list[dict]:
+    """Deriva o que pesquisar dos modelos que mais vendem HOJE na nossa base.
+
+    Ranqueia por vendas RECENTES (ultimos meses), nao pelo total historico: a
+    numeracao nao indica atualidade (o Galaxy A73 e mais antigo que o A56) e
+    linhas descontinuadas acumulam volume passado. Para cada modelo do topo,
+    projeta a proxima geracao (A56 -> A57, iPhone 17 Pro Max -> 18 Pro Max).
+
+    Ha uma cota por marca (`per_brand`): so por volume, Apple/Samsung tomariam
+    todas as vagas e marcas menores nunca seriam vigiadas — foi exatamente assim
+    que a Motorola ficou fora do radar ate o G86 virar sucesso.
+    """
+    from .collectors.launch_calendar import _next_gen_name
+    from .internal_bi import load_catalog, load_internal_records, load_monthly_sales
+
+    monthly = load_monthly_sales()
+    records = load_internal_records()
+    # Ja conhecidos: nao adianta "descobrir" um modelo que ja esta na base/catalogo
+    known = {r["canonical_model"] for r in records} | load_catalog()
+
+    ranked = []
+    for r in records:
+        gen, name = r.get("generation") or 0, r.get("device") or r.get("canonical_model", "")
+        if not gen or not name:
+            continue
+        if "/" in name:
+            continue  # capa combinada ("iPhone 13/14") nao tem "proxima geracao"
+        if not r.get("brand"):
+            continue  # sem marca a busca fica ambigua ("A33 5G" de quem?)
+        series = monthly.get(r["canonical_model"]) or []
+        recent = sum(series[-recent_months:]) if series else 0
+        if series and recent <= 0:
+            continue  # linha sem venda recente = descontinuada
+        ranked.append((recent or r.get("units", 0), r, gen, name))
+
+    out, seen, by_brand = [], set(), {}
+    for recent, r, gen, name in sorted(ranked, key=lambda t: -t[0]):
+        nxt = _next_gen_name(name, gen)
+        if not nxt or "(proximo)" in nxt:
+            continue
+        key = canonicalize(nxt).canonical
+        if key in seen or key in known:
+            continue  # a "proxima geracao" ja existe na base -> nao e novidade
+        brand = r.get("brand") or "?"
+        if by_brand.get(brand, 0) >= per_brand:
+            continue  # cota da marca cheia: da vez para marcas menores
+        seen.add(key)
+        by_brand[brand] = by_brand.get(brand, 0) + 1
+        out.append({
+            "device": nxt,
+            "query": f"{nxt} lancamento Brasil data",
+            "brand": brand,
+            "base_device": name,
+            "base_recent_units": recent,
+        })
+        if len(out) >= top_n:
+            break
+    return out
+
+
 def load_watchlist(path: Path = WATCHLIST_PATH) -> list[dict]:
+    """Watchlist = fixadas manualmente (watchlist.json) + derivadas da base.
+
+    A base manda no que pesquisar; o arquivo serve para fixar casos extras.
+    """
+    manual: list[dict] = []
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            manual = json.loads(path.read_text(encoding="utf-8")) or []
         except json.JSONDecodeError:
-            pass
-    return DEFAULT_WATCHLIST
+            manual = []
+
+    merged, seen = [], set()
+    for item in list(manual) + watchlist_from_base():
+        key = canonicalize(item.get("device", "")).canonical
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged or DEFAULT_WATCHLIST
 
 
 def _signals_from_search(ai: AIClient, query: str, results: list[dict]) -> list[dict]:

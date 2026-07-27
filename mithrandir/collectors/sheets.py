@@ -108,6 +108,8 @@ def build_records(parsed: dict) -> list[dict]:
             "family": e["family"], "generation": e["generation"] or 0,
             "units": e["total"], "revenue": 0.0,
             "margin_pct": 0.0, "sell_through_pct": 0.0,
+            # nome comercial como aparece na planilha (para montar buscas legiveis)
+            "device": e["device"],
         })
     return records
 

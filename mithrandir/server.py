@@ -74,7 +74,18 @@ def _state() -> dict:
         "calendar": store.get_cached("calendar") or [],
         "overrides": load_overrides(),
         "settings": load_settings(),
+        "watchlist": _watchlist(),
     }
+
+
+def _watchlist() -> list:
+    """Linhas vigiadas pelo agente (derivadas da base + fixadas)."""
+    try:
+        from .news_agent import load_watchlist
+        return load_watchlist()
+    except Exception as e:
+        print(f"[watchlist] {e}")
+        return []
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -488,6 +499,12 @@ transform:translateX(100%);transition:.25s;z-index:11;overflow-y:auto;padding:22
   </div>
   <button class="btn" id="s-save">Salvar configurações</button>
   <div class="msg" id="s-msg"></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Linhas monitoradas pelo agente</h3>
+    <div class="hint">Derivadas da <b>sua base de vendas</b>: as próximas gerações dos modelos que mais vendem hoje e que ainda não temos. Fixe extras em <code>data/watchlist.json</code>.</div>
+    <div id="wlist"></div>
+  </div>
 </div>
 
 </div>
@@ -513,7 +530,16 @@ async function load(){
 }
 async function post(url,body){ return await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})).json(); }
 
-function renderAll(){ renderBadges(); renderCalendar(); renderCandidates(); renderOverrides(); renderSettings(); }
+function renderAll(){ renderBadges(); renderCalendar(); renderCandidates(); renderOverrides(); renderSettings(); renderWatchlist(); }
+function renderWatchlist(){
+  const wl=STATE.watchlist||[], el=$('wlist');
+  if(!wl.length){el.innerHTML='<div class="empty">Nenhuma linha monitorada.</div>';return;}
+  el.innerHTML=wl.map(w=>{
+    const base=w.base_device?`base: ${w.base_device}`:'fixado manualmente';
+    const un=w.base_recent_units?` · ${w.base_recent_units.toLocaleString('pt-BR')} un (3m)`:'';
+    return `<div class="ovitem"><div><b>${w.device}</b><br><small style="color:var(--muted)">${base}${un}</small></div></div>`;
+  }).join('');
+}
 function renderSettings(){
   const s=STATE.settings||{};
   $('s-case').value=s.case_price; $('s-mold').value=s.mold_cost; $('s-unit').value=s.unit_cost;

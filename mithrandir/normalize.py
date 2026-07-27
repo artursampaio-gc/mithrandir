@@ -59,6 +59,8 @@ def _clean(text: str) -> str:
     t = re.sub(r"\bdual\b|\bsim\b|\bnfc\b", " ", t)
     # Separa sufixo colado ao numero de geracao: "s26fe" -> "s26 fe"
     t = re.sub(r"(\d)([a-z])", r"\1 \2", t)
+    # Pontuacao solta no fim de token ("Galaxy S25." -> "Galaxy S25")
+    t = re.sub(r"[.,;:]+(\s|$)", r"\1", t)
     t = re.sub(r"\s+", " ", t)
     return t.strip()
 
