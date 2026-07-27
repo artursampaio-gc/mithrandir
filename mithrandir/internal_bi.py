@@ -91,15 +91,24 @@ def load_catalog(path: Optional[Path] = None) -> set[str]:
     return catalog
 
 
-def _perf_score(rec: dict, max_units: int) -> float:
-    """Normaliza o desempenho do similar em 0-100."""
-    units_norm = (rec["units"] / max_units * 100.0) if max_units else 0.0
+def _perf_score(rec: dict, all_units: list[int]) -> float:
+    """Desempenho do similar em 0-100, pelo PERCENTIL de unidades no catalogo.
+
+    Percentil (e nao normalizacao linear pelo maximo) porque a distribuicao real
+    e de cauda longa: um modelo dominante (ex.: iPhone 13/14, ~100k) esmagaria
+    todos os outros para perto de zero. Assim, 80 = "vendeu mais que 80% dos
+    modelos da nossa base".
+    """
+    units = rec.get("units", 0) or 0
+    if not all_units or units <= 0:
+        return 0.0
+    pct = sum(1 for u in all_units if u <= units) / len(all_units) * 100.0
     sell_through = rec.get("sell_through_pct", 0.0) or 0.0    # ja 0-100
     margin_norm = min(rec.get("margin_pct", 0.0) or 0.0, 100.0)
-    # Sem margem/sell-through (ex.: dados da planilha so tem unidades) -> usa unidades
+    # Sem margem/sell-through (ex.: planilha so tem unidades) -> usa so o percentil
     if sell_through <= 0 and margin_norm <= 0:
-        return round(max(0.0, min(100.0, units_norm)), 2)
-    score = 0.5 * units_norm + 0.35 * sell_through + 0.15 * margin_norm
+        return round(pct, 2)
+    score = 0.5 * pct + 0.35 * sell_through + 0.15 * margin_norm
     return round(max(0.0, min(100.0, score)), 2)
 
 
@@ -111,7 +120,7 @@ def find_similar(parsed: ParsedModel, records: list[dict]) -> Optional[InternalP
     """
     if not records:
         return None
-    max_units = max((r["units"] for r in records), default=0)
+    all_units = [r.get("units", 0) or 0 for r in records if (r.get("units", 0) or 0) > 0]
 
     same_family = [r for r in records if r["family"] and r["family"] == parsed.family]
     pool = same_family or [r for r in records if r["brand"] == parsed.brand]
@@ -135,6 +144,6 @@ def find_similar(parsed: ParsedModel, records: list[dict]) -> Optional[InternalP
         revenue=match["revenue"],
         margin_pct=match["margin_pct"],
         sell_through_pct=match["sell_through_pct"],
-        perf_score=_perf_score(match, max_units),
+        perf_score=_perf_score(match, all_units),
         monthly_sales=monthly,
     )

@@ -42,8 +42,14 @@ class ParsedModel:
     generation: Optional[int]  # numero da geracao (ex.: 26 em "S26 FE")
 
 
+def _unglue_brand(text: str) -> str:
+    """Separa a marca colada ao numero: 'iPhone12Mini' -> 'iPhone 12Mini'."""
+    tokens = "|".join(sorted(BRANDS, key=len, reverse=True))
+    return re.sub(rf"({tokens})(\d)", r"\1 \2", text, flags=re.IGNORECASE)
+
+
 def _clean(text: str) -> str:
-    t = text.lower().strip()
+    t = _unglue_brand(text).lower().strip()
     t = re.sub(r"[®™]", "", t)
     for pat, rep in REPLACEMENTS:
         t = re.sub(pat, rep.lower(), t)
@@ -58,7 +64,7 @@ def _clean(text: str) -> str:
 
 
 def detect_brand(text: str) -> str:
-    low = text.lower()
+    low = _unglue_brand(text).lower()   # pega tambem "iPhone12Mini"
     for token, brand in BRANDS.items():
         if re.search(rf"\b{re.escape(token)}\b", low):
             return brand
