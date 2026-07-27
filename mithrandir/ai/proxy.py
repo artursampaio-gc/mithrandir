@@ -10,9 +10,8 @@ usa os fallbacks baseados em regras. Nenhuma chamada a LLM externo e feita.
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 
+from .._http import request_json
 from ..config import AIConfig
 
 
@@ -41,20 +40,14 @@ class AIClient:
         }
         if temperature is not None:  # alguns modelos (ex.: gpt-5.5) nao aceitam temperature
             payload["temperature"] = temperature
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=data,
+        body = request_json(
+            "POST", url, json_body=payload, timeout=timeout,
             headers={
-                "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.cfg.api_key}",
                 # O gateway bloqueia o User-Agent padrao do Python (403); enviamos um explicito
                 "User-Agent": "Mithrandir/0.1",
             },
-            method="POST",
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
         return body["choices"][0]["message"]["content"].strip()
 
     def complete_json(self, prompt: str, system: str = "", timeout: int = 60) -> dict:

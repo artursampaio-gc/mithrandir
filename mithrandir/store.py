@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 import os
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ._http import request_json
 from .config import DATA_DIR
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -50,11 +50,8 @@ def _req(method: str, table: str, params: dict | None = None, body=None,
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers=_headers(headers))
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        txt = r.read().decode("utf-8")
-        return json.loads(txt) if txt else []
+    return request_json(method, url, headers=_headers(headers), json_body=body,
+                        timeout=timeout) or []
 
 
 def sb_select(table: str, params: dict | None = None) -> list:

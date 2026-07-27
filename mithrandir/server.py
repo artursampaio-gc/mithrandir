@@ -88,6 +88,12 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def do_GET(self):
+        try:
+            self._route_get()
+        except Exception as e:
+            self._json({"error": repr(e), "path": self.path}, 500)
+
+    def _route_get(self):
         if self.path == "/" or self.path.startswith("/index"):
             self._send(200, APP_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/api/state":
@@ -111,6 +117,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, p.read_bytes(), "image/svg+xml; charset=utf-8")
 
     def do_POST(self):
+        try:
+            self._route_post()
+        except Exception as e:
+            self._json({"ok": False, "error": repr(e), "path": self.path}, 500)
+
+    def _route_post(self):
         body = self._read_body()
         if self.path == "/api/intel":
             self._handle_intel(body)

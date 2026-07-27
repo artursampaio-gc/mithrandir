@@ -1,2 +1,3 @@
-# Mithrandir usa apenas a biblioteca padrao do Python (sem dependencias externas).
-# Arquivo presente para o Vercel detectar o runtime Python.
+# requests: cliente HTTP robusto para o ambiente serverless do Vercel
+# (o urllib pode falhar la com [Errno 16] Device or resource busy).
+requests>=2.31
