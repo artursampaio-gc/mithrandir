@@ -1,8 +1,10 @@
 """Entrypoint serverless do Vercel.
 
-O runtime Python do Vercel usa a variavel `handler` (subclasse de
-BaseHTTPRequestHandler). Reaproveitamos o mesmo Handler do servidor local.
-Todas as rotas caem aqui (ver rewrites no vercel.json).
+O runtime Python do Vercel (@vercel/python) procura, no topo do arquivo, uma
+classe/variavel chamada `handler` (subclasse de BaseHTTPRequestHandler),
+`app` ou `application`. Definimos `handler` como subclasse do Handler do
+servidor local para o detector reconhece-lo. Todas as rotas caem aqui
+(ver routes no vercel.json).
 """
 import os
 import sys
@@ -10,4 +12,8 @@ import sys
 # Garante que o pacote `mithrandir` (na raiz do repo) seja importavel
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mithrandir.server import Handler as handler  # noqa: E402,F401
+from mithrandir.server import Handler  # noqa: E402
+
+
+class handler(Handler):  # noqa: N801  (nome exigido pelo Vercel)
+    pass
