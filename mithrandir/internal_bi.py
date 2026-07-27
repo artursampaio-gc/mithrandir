@@ -12,13 +12,18 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from . import store
 from .config import SAMPLE_DIR
 from .models import InternalPerformance
 from .normalize import ParsedModel, canonicalize
 
 
 def load_monthly_sales(path: Optional[Path] = None) -> dict:
-    """Vendas mensais (6 meses) por modelo de estudo. Exemplo ate o BI real."""
+    """Vendas mensais por modelo. Prioriza os dados reais da planilha (store);
+    cai no exemplo (monthly_sales.json) quando nao houver."""
+    cached = store.get_cached("monthly_sales")
+    if cached:
+        return cached
     path = path or (SAMPLE_DIR / "monthly_sales.json")
     if not path.exists():
         return {}
@@ -45,7 +50,11 @@ def _to_int(v: str) -> int:
 
 
 def load_internal_records(path: Optional[Path] = None) -> list[dict]:
-    """Le a base interna de vendas de capinhas por modelo de aparelho."""
+    """Base interna de vendas por modelo. Prioriza os dados reais da planilha
+    (store); cai no CSV de exemplo quando nao houver."""
+    cached = store.get_cached("internal_records")
+    if cached:
+        return cached
     path = path or (SAMPLE_DIR / "internal_bi_sample.csv")
     records: list[dict] = []
     if not path.exists():
@@ -85,8 +94,11 @@ def load_catalog(path: Optional[Path] = None) -> set[str]:
 def _perf_score(rec: dict, max_units: int) -> float:
     """Normaliza o desempenho do similar em 0-100."""
     units_norm = (rec["units"] / max_units * 100.0) if max_units else 0.0
-    sell_through = rec.get("sell_through_pct", 0.0)          # ja 0-100
-    margin_norm = min(rec.get("margin_pct", 0.0), 100.0)    # ja 0-100
+    sell_through = rec.get("sell_through_pct", 0.0) or 0.0    # ja 0-100
+    margin_norm = min(rec.get("margin_pct", 0.0) or 0.0, 100.0)
+    # Sem margem/sell-through (ex.: dados da planilha so tem unidades) -> usa unidades
+    if sell_through <= 0 and margin_norm <= 0:
+        return round(max(0.0, min(100.0, units_norm)), 2)
     score = 0.5 * units_norm + 0.35 * sell_through + 0.15 * margin_norm
     return round(max(0.0, min(100.0, score)), 2)
 

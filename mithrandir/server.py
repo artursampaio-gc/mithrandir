@@ -43,7 +43,21 @@ def _apply_intel() -> None:
         store.set_cached("calendar", apply_overrides_to(base))
 
 
+def _sync_sheet() -> int:
+    """Sincroniza a planilha de vendas (Google Sheets) para o store. Best-effort."""
+    try:
+        from .collectors.sheets import sync_to_store
+        n = sync_to_store(_cfg.sheets)
+        if n:
+            print(f"[sheets] {n} modelos sincronizados da planilha")
+        return n
+    except Exception as e:
+        print(f"[sheets] sync ignorado: {e}")
+        return 0
+
+
 def _rebuild_all() -> None:
+    _sync_sheet()          # puxa vendas reais da planilha antes de recalcular
     _rebuild_candidates()
     _rebuild_calendar()
 

@@ -68,9 +68,23 @@ class MercadoLivreConfig:
 
 
 @dataclass
+class SheetsConfig:
+    """Planilha de vendas internas (Google Sheets) via API key + link publico."""
+    api_key: str = ""
+    sheet_id: str = ""
+    gid: str = ""     # id do tab (da URL ...#gid=XXXX)
+    range: str = ""   # opcional; se vazio, resolve o nome do tab pelo gid
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_key and self.sheet_id)
+
+
+@dataclass
 class Config:
     ai: AIConfig = field(default_factory=AIConfig)
     mercadolivre: MercadoLivreConfig = field(default_factory=MercadoLivreConfig)
+    sheets: SheetsConfig = field(default_factory=SheetsConfig)
     # Forca modo mock mesmo que haja credencial (util para testes locais)
     force_mock: bool = False
 
@@ -95,5 +109,12 @@ def load_config() -> Config:
         access_token=_get("ml_access_token", "") or "",
         site_id=_get("ml_site_id", "MLB") or "MLB",
     )
+    sheets = SheetsConfig(
+        api_key=_get("sheets_api_key", "") or "",
+        # sheet_id e gid ja vem preenchidos com a planilha de vendas da Gocase
+        sheet_id=_get("sheets_id", "1zmkOtSz2MkPmqkfw-_y1Qt2vq4ZpmCITILREQ4ySNsE") or "",
+        gid=str(_get("sheets_gid", "113330236") or ""),
+        range=_get("sheets_range", "") or "",
+    )
     force_mock = str(_get("force_mock", "")).lower() in ("1", "true", "yes")
-    return Config(ai=ai, mercadolivre=ml, force_mock=force_mock)
+    return Config(ai=ai, mercadolivre=ml, sheets=sheets, force_mock=force_mock)

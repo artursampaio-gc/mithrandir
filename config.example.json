@@ -3,10 +3,14 @@
 
   "ai_base_url": "",
   "ai_api_key": "",
-  "ai_model": "gpt-4o-mini",
+  "ai_model": "gpt-5.5",
 
   "ml_access_token": "",
   "ml_site_id": "MLB",
+
+  "sheets_api_key": "",
+  "sheets_id": "1zmkOtSz2MkPmqkfw-_y1Qt2vq4ZpmCITILREQ4ySNsE",
+  "sheets_gid": "113330236",
 
   "force_mock": false
 }
