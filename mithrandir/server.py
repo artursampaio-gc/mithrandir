@@ -243,7 +243,6 @@ header .logo{height:42px;width:auto;display:block}
 header .sub{opacity:.9;font-size:13.5px;margin-top:2px}
 .badges{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
 .badge{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:5px 11px;font-size:12.5px}
-.badge.mock{background:var(--amber);border-color:var(--amber);font-weight:700}
 .refreshbtn{margin-top:12px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;
 border-radius:9px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
 .refreshbtn:hover{background:rgba(255,255,255,.26)}.refreshbtn:disabled{opacity:.6;cursor:default}
@@ -521,7 +520,6 @@ function renderSettings(){
 function renderBadges(){
   const p=[`<div class="badge">${STATE.candidates.length} candidatos</div>`,
     `<div class="badge">${STATE.calendar.length} no calendário</div>`];
-  p.push(STATE.mock_mode?`<div class="badge mock">MODO MOCK</div>`:`<div class="badge">dados reais</div>`);
   p.push(`<div class="badge">IA: ${STATE.ai_available?'proxy ligado':'heurística'}</div>`);
   $('badges').innerHTML=p.join('');
 }
