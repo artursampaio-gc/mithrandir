@@ -1,103 +1,173 @@
-# Mithrandir — Guia de desenvolvimento (MVP)
+# Mithrandir — Handoff técnico
 
-MVP do sistema de scouting em **Python puro** (biblioteca padrao, sem dependencias
-externas). Roda hoje em **modo mock** e aceita as fontes reais via configuracao.
+Sistema de scouting de novos modelos de celular para priorizar o desenvolvimento
+de capinhas na Gocase. Python (biblioteca padrão + `requests` na nuvem). Roda
+**local** (arquivos) ou na **nuvem** (Vercel serverless + Supabase) — o mesmo código.
 
-## Como rodar
+> Visão de produto e specs: `README.md` e `specs/`. Este arquivo é o guia técnico.
+
+---
+
+## 1. Como está hoje (estado real)
+
+| Peça | Status |
+|------|--------|
+| App web (Calendário, Candidatos, Intel, Config) | ✅ funcionando |
+| Proxy de IA (`gpt-5.5`) | ✅ real (via env) |
+| Vendas internas (Google Sheets) | ✅ real **quando a API key estiver setada**; senão CSV de exemplo |
+| Calendário de lançamentos | ✅ base curada (`news_seed.json`) + IA + intel |
+| Intel manual (overrides) | ✅ real (Supabase/arquivo) |
+| Tração de marketplace (Mercado Livre etc.) | ⚠️ **mock** (falta token da API) |
+| Agente de notícias (busca web) | ⚠️ desligado (falta API de busca; ver §7) |
+| Deploy | ✅ Vercel + Supabase |
+
+---
+
+## 2. Rodar local
 
 ```powershell
-# na pasta do projeto
-python -m mithrandir serve        # sobe o app web em http://127.0.0.1:8756
-python -m mithrandir serve 9000   # em outra porta
-python -m mithrandir agent        # agente: atualiza data/news_cache.json (watchlist)
-python -m mithrandir run          # coleta -> score -> gera output/dashboard.html (estatico)
-python -m mithrandir top 10       # imprime o top N no terminal
-python -m mithrandir info         # mostra o modo/config atual
-python -m unittest discover -s tests   # roda os testes
+python -m mithrandir serve        # app web em http://127.0.0.1:8756
+python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
+python -m mithrandir agent        # roda o agente de notícias (no-op sem API de busca)
+python -m mithrandir info         # mostra config/modo atual
+python -m unittest discover -s tests   # testes (28)
 ```
 
-O app (`serve`) tem 3 abas: **Calendário** (datas de lançamento), **Candidatos**
-(ranking) e **Intel** (input manual que sobrepõe o scouting). O `run` gera um
-dashboard estático de candidatos (`output/dashboard.html`) para export/offline.
+Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
+Basta ter Python 3.11+; `requests` é opcional local (usa `urllib` como fallback).
 
-## Calendário de lançamentos e Intel
+O app tem 4 abas: **Calendário** (linha do tempo por ano, paginada), **Candidatos**
+(ranking → clique abre o one-pager de viabilidade), **Intel** (input que sobrepõe o
+scouting) e **Config** (custos, frequência de scouting).
 
-- `collectors/websearch.py` — lê sinais de notícias de `data/news_cache.json`
-  (hoje semeado por busca manual). **Em produção, o agente diário deve preencher
-  esse cache**: buscar notícias online + usar o proxy de IA, gravando no mesmo
-  formato. O resto não muda.
-- `launch_estimator.py` — decide a data por prioridade: **intel manual > IA sobre
-  notícias > heurística de datas > previsão sazonal**. Sem proxy, usa a heurística.
-- `overrides.py` + `intel_parser.py` — a intel do analista (em `data/overrides.json`)
-  sempre vence. O texto livre do "chat" é estruturado pela IA (ou por regex sem IA).
-- `server.py` — app web + API (`/api/state`, `/api/intel`, `/api/refresh`, `/api/agent`, `/api/settings`).
+---
 
-## Análise de viabilidade e configurações
-
-- `viability.py` — calcula receita, margem e breakeven a partir das vendas do
-  device de estudo (similar) e dos custos. Breakeven: `qtd = molde / (preço − custo_und)`.
-  Clicar num candidato abre o one-pager de viabilidade (aba Candidatos).
-- `settings.py` — parâmetros editáveis na aba **Config** (`data/settings.json`):
-  valor da capinha, custo do molde, custo por unidade, frequência/horário de
-  scouting, meses de histórico. Salvar recalcula a viabilidade.
-- Vendas mensais do similar: `data/sample/monthly_sales.json` (exemplo até o BI real).
-
-## Agente de scouting de noticias (RF-02)
-
-- `news_agent.py` — para cada device da watchlist (`data/watchlist.json`), coleta
-  sinais de data e grava em `data/news_cache.json`. Rodar: `python -m mithrandir agent`
-  ou botao "Buscar noticias (IA)" no app. Agendar diariamente para automatizar.
-- Dois modos: **com API de busca** (vasculha a web + IA extrai) e, sem ela, o
-  **fallback por conhecimento do proxy** (limitado pelo corte de treino do modelo).
-- **Peca que falta para o scouting web real:** uma API de busca. Plugue em
-  `collectors/websearch.py::get_search_provider` (hoje retorna None). Feito isso, o
-  agente passa a vasculhar a web de verdade sem mudar mais nada.
-
-## Estrutura
+## 3. Arquitetura
 
 ```
+Google Sheets (vendas) ─┐
+Proxy de IA (gpt-5.5) ───┤→  compute (pipeline + calendário)  →  Supabase (app_cache)
+base curada / intel ─────┘                                           │
+                                                                     ▼
+                             navegador  ←  função serverless (lê do Supabase)
+```
+
+- **`store.py`** é o ponto único de I/O. Se `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`
+  existem → usa **Supabase** (REST); senão → **arquivos locais**. `overrides`,
+  `settings`, o cache de notícias e o cache do app passam por ele.
+- **Sem estado em memória** (serverless): o compute grava no Supabase (`app_cache`)
+  e a leitura da web só consulta o banco. Nada de threads/caches entre requisições.
+- **`_http.py`** — usa `requests` na nuvem (o `urllib` falha no Vercel com
+  `[Errno 16]`), `urllib` no local.
+
+### Fluxo de compute (importante)
+- **Candidatos** (`_rebuild_candidates`) = `pipeline.run_pipeline` → rápido, **sem IA**.
+- **Calendário** (`_rebuild_calendar`) = `build_calendar(with_overrides=False)` (IA,
+  ~20-30s) grava `calendar_base`; depois `apply_overrides_to` aplica a intel (barato).
+- **Intel** (add/delete) só re-aplica sobre `calendar_base` → **sem chamar IA**.
+- **`/api/refresh`** e **`/api/cron`** fazem o compute pesado + sincronizam a planilha.
+
+---
+
+## 4. Deploy (Vercel + Supabase)
+
+- **`api/index.py`** — entrypoint serverless (`class handler(Handler)`).
+- **`vercel.json`** — `builds` (@vercel/python) + `routes` (catch-all `/(.*)` →
+  `api/index.py`) + **cron** diário `0 8 * * *` em `/api/cron` + `maxDuration: 60`.
+- **Repo:** github.com/artursampaio-gc/mithrandir (deploy automático a cada push).
+
+### Variáveis de ambiente (Vercel → Settings → Environment Variables)
+| Variável | Para quê |
+|----------|----------|
+| `MITHRANDIR_AI_BASE_URL` | proxy de IA (`https://ai-proxy.gogroupbr.com/v1`) |
+| `MITHRANDIR_AI_API_KEY` | chave do proxy de IA (secreta) |
+| `MITHRANDIR_AI_MODEL` | `gpt-5.5` |
+| `SUPABASE_URL` | URL do projeto Supabase |
+| `SUPABASE_SERVICE_KEY` | **service_role** (bypassa RLS; secreta) |
+| `MITHRANDIR_SHEETS_API_KEY` | Google Sheets API key (planilha compartilhada por link) |
+
+`sheets_id` e `sheets_gid` já têm default no código (planilha atual); sobrescreva
+com `MITHRANDIR_SHEETS_ID` / `MITHRANDIR_SHEETS_GID` se trocar de planilha.
+
+> ⚠️ Chaves secretas só como env var no Vercel — nunca no git. `config.json` (local)
+> está no `.gitignore`.
+
+### Primeira carga
+O app abre vazio até o primeiro compute. Clique **🔄 Recalcular** (ou espere o cron).
+
+### Supabase — tabelas
+`app_cache` (blobs: candidates/calendar/calendar_base/news_cache/internal_records/
+monthly_sales), `intel`, `settings`, `daily_ranking`, `device`, `device_launch`,
+`candidate_snapshot`, `news_signal`, `watchlist`. RLS ligado (a service_role passa
+por cima). SQL em `specs/` / histórico do chat.
+
+---
+
+## 5. Fontes de dados
+
+| Fonte | Módulo | Real? |
+|-------|--------|-------|
+| **Vendas internas** (planilha) | `collectors/sheets.py` → `internal_bi.py` | ✅ com API key; extrai o modelo após o último ` / `, soma por modelo, gera total + série mensal |
+| **Proxy de IA** | `ai/proxy.py` | ✅ (formato OpenAI) |
+| **Calendário / notícias** | `collectors/websearch.py` (`news_seed.json`) | ✅ base curada; agente de busca web = pendente |
+| **Intel do analista** | `overrides.py` + `intel_parser.py` | ✅ |
+| **Marketplace** | `collectors/mercadolivre.py` + `mock_seed.py` | ⚠️ mock (falta token ML) |
+| **Previsão sazonal** | `collectors/launch_calendar.py` | ✅ (histórico em `data/sample/`) |
+
+`internal_bi` prioriza os dados da planilha (via `store`) e cai no CSV de exemplo
+quando não houver. O calendário prioriza busca web real e cai na base curada
+(`news_seed.json`) — o "modo conhecimento" do agente foi desligado (§7).
+
+---
+
+## 6. Estrutura
+
+```
+api/index.py             # entrypoint Vercel (handler)
+vercel.json              # build + rotas + cron
+requirements.txt         # requests (nuvem)
 mithrandir/
-  config.py            # configuracao (env / config.json) e deteccao de modo mock
-  models.py            # dataclasses do dominio (Candidate, sinais, etc.)
-  normalize.py         # normalizacao/dedup de nome de modelo (regras + IA opcional)
-  internal_bi.py       # base interna (BI) + casamento com modelo similar + catalogo
-  scoring.py           # motor de priorizacao (score explicavel)
-  pipeline.py          # orquestracao do fluxo diario
-  dashboard.py         # gera o HTML interativo
-  cli.py / __main__.py # linha de comando
-  ai/proxy.py          # cliente do proxy interno de IA (obrigatorio - RNF-01)
-  collectors/
-    launch_calendar.py # previsao sazonal de lancamentos
-    mercadolivre.py    # tracao no marketplace (API real + fallback mock)
-    news.py            # noticias/rumores (RSS + fallback mock)
-    mock_seed.py       # dados de exemplo (modo mock)
-data/sample/           # CSVs de exemplo (BI, catalogo, historico de lancamentos)
-tests/                 # testes (unittest)
+  store.py               # I/O: Supabase REST ou arquivos locais
+  _http.py               # HTTP (requests / urllib)
+  config.py              # env / config.json (AI, ML, Sheets, Supabase)
+  server.py              # app web + API + serve() local
+  pipeline.py            # candidatos (score + viabilidade)
+  scoring.py             # motor de priorização
+  viability.py           # receita / breakeven
+  launch_estimator.py    # calendário (intel > IA > heurística > sazonal) + apply_overrides_to
+  internal_bi.py         # vendas internas (planilha/CSV) + similar + catálogo
+  normalize.py           # normalização de nome de modelo
+  overrides.py           # intel (Supabase/arquivo)
+  settings.py            # config (Supabase/arquivo)
+  news_agent.py          # agente de notícias (watchlist)
+  intel_parser.py        # texto livre -> override (IA/regex)
+  dashboard.py           # export estático (python -m mithrandir run)
+  ai/proxy.py            # cliente do proxy de IA
+  collectors/            # sheets, mercadolivre, launch_calendar, news, websearch, mock_seed
+data/
+  news_seed.json         # base curada de lançamentos (real, versionada)
+  watchlist.json         # devices que o agente vigia
+  sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
+tests/                   # unittest (28)
 ```
 
-## Como plugar as fontes reais (quando os acessos sairem)
+Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
+`data/mithrandir.db`, `output/`.
 
-Copie `config.example.json` para `config.json` e preencha (ou use variaveis
-`MITHRANDIR_*`). Assim que qualquer fonte real for configurada, o sistema sai do
-modo mock automaticamente.
+---
 
-| Fonte | Onde mexer | O que fazer |
-|-------|-----------|-------------|
-| **Proxy de IA** | `config.json` (`ai_base_url`, `ai_api_key`, `ai_model`) | Endpoint compativel com a API OpenAI. Ajuste `ai/proxy.py` se o contrato do proxy diferir. |
-| **Mercado Livre** | `config.json` (`ml_access_token`) | Token da API. Revise `collectors/mercadolivre.py` (categoria/campos). |
-| **BI (base interna)** | `internal_bi.py` (`load_internal_records`) | Trocar a leitura do CSV por consulta a API/dataset do BI, mantendo o mesmo formato de saida. |
-| **Noticias** | `collectors/news.py` | Ativar `collect(enabled=True)` e ajustar a lista `FEEDS`. |
-| **Outros marketplaces** | novo arquivo em `collectors/` | Seguir o padrao do `mercadolivre.py` (retornar observacoes no mesmo formato). |
+## 7. Limitações conhecidas / próximos passos
 
-## Ajustar a priorizacao
-
-Os pesos por fase e as penalidades ficam em `mithrandir/scoring.py` (`WEIGHTS`,
-`PENALTY_*`). Devem ser calibrados com o time (spec 04) e, futuramente, pelo loop
-de feedback (RF-08).
-
-## Agendamento diario (Fase 2)
-
-Rodar `python -m mithrandir run` uma vez por dia (Agendador de Tarefas do Windows
-ou cron no servidor de TI). O dashboard e regenerado a cada execucao e o historico
-fica no SQLite (`data/mithrandir.db`) para calcular momentum.
-```
+1. **Marketplace ainda mock.** Ligar a **API do Mercado Livre** (token grátis) em
+   `collectors/mercadolivre.py` — vira a maior fonte real de tração. Amazon/Magalu
+   não têm API pública gratuita (ver spec 03).
+2. **Agente de notícias desligado.** O `gpt-5.5` não conhece datas de 2026 (corte de
+   treino), então o "modo conhecimento" só degradava os dados. Falta uma **API de
+   busca web**: plugar em `collectors/websearch.py::get_search_provider` (hoje `None`);
+   feito isso, o agente volta a atualizar sozinho e sobrepõe a base curada.
+3. **Timeline de vendas.** A tabela `daily_ranking` existe mas ainda não é populada;
+   quando o marketplace for real, gravar o top-N diário para a curva "bombou no
+   lançamento vs engrenou depois".
+4. **Loop de feedback (RF-08)** — registrar decisão + resultado real para recalibrar
+   os pesos do score (`scoring.py::WEIGHTS`).
+5. **Custos por device** — hoje globais na aba Config; poderiam ser por modelo.
