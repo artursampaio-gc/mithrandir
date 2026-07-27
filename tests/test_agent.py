@@ -30,15 +30,15 @@ class TestNewsAgent(unittest.TestCase):
             self.assertEqual(cache["SAMSUNG S26 FE"]["signals"][0]["source"], "TesteVeiculo")
             self.assertIn("mode", cache["_meta"])
 
-    def test_modo_conhecimento_sem_search(self):
+    def test_sem_busca_web_nao_sobrescreve(self):
+        # Sem search_fn (sem API de busca), o agente e no-op: nao grava nada.
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "news.json"
             watchlist = [{"device": "Apple iPhone 18 Pro", "query": "iphone 18"}]
             updated = news_agent.refresh_news_cache(
                 ai=FakeAI(), search_fn=None, watchlist=watchlist, path=path)
-            self.assertEqual(updated, ["Apple iPhone 18 Pro"])
-            cache = load_news_cache_raw(path)
-            self.assertIn("APPLE 18 PRO", cache)
+            self.assertEqual(updated, [])
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

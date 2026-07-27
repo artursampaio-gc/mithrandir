@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "descricao": "Base curada de sinais de lancamento (dados reais verificados). Empacotada e somente-leitura. E a fonte usada enquanto nao houver uma API de busca web ligada; o agente com busca real sobrepoe isto no news_cache (mode 'busca web').",
+    "seeded_at": "2026-07-27"
+  },
+  "SAMSUNG S26": {
+    "device": "Samsung Galaxy S26",
+    "signals": [
+      {"source": "Samsung Newsroom", "url": "https://news.samsung.com/br/samsung-inicia-entregas-do-galaxy-s26-series-no-brasil", "text": "Samsung lancou a linha Galaxy S26 no Brasil em 25 de fevereiro de 2026, com entregas a partir de marco de 2026."},
+      {"source": "Tecnoblog", "url": "https://tecnoblog.net/noticias/galaxy-s26-samsung-aumenta-precos/", "text": "Galaxy S26 chegou ao Brasil em fevereiro de 2026 a partir de R$ 7.499."}
+    ]
+  },
+  "SAMSUNG S26 FE": {
+    "device": "Samsung Galaxy S26 FE",
+    "signals": [
+      {"source": "PhoneArena", "url": "https://www.phonearena.com/galaxy-s26-fe-release-date-price-features-news", "text": "Galaxy S26 FE release date expected September or October 2026, following the S25 FE launched in September 2025."},
+      {"source": "Canaltech", "url": "https://canaltech.com.br/smartphone/galaxy-s26-fe-vaza-em-certificacao-saiba-o-que-esperar-dopremium-acessivel/", "text": "Galaxy S26 FE surge em certificacao; lancamento esperado para setembro de 2026 no Brasil."}
+    ]
+  },
+  "XIAOMI NOTE 15": {
+    "device": "Xiaomi Redmi Note 15",
+    "signals": [
+      {"source": "TechTudo", "url": "https://www.techtudo.com.br/guia/2026/01/redmi-note-15-5g-preco-e-ficha-tecnica-do-celular-custo-beneficio-da-xiaomi-edmobile.ghtml", "text": "Redmi Note 15 5G foi lancado no Brasil em 21 de janeiro de 2026."},
+      {"source": "Diario de Pernambuco", "url": "https://www.diariodepernambuco.com.br/tecnologia/2026/01/11705914-xiaomi-lanca-serie-com-tres-modelos-do-redmi-note-15-no-brasil.html", "text": "Xiaomi lancou a serie Redmi Note 15 no Brasil em janeiro de 2026."}
+    ]
+  },
+  "APPLE 18 PRO": {
+    "device": "Apple iPhone 18 Pro",
+    "signals": [
+      {"source": "Forbes Brasil", "url": "https://forbes.com.br/forbes-tech/2026/06/como-o-wwdc-2026-sinaliza-os-detalhes-do-novo-iphone-18-previsto-para-setembro/", "text": "iPhone 18 Pro e Pro Max previstos para setembro de 2026, com evento provavel em 9 de setembro de 2026."},
+      {"source": "Exame", "url": "https://exame.com/tecnologia/iphone-18-deve-chegar-mais-caro-e-dividido-em-dois-lancamentos-apontam-rumores/", "text": "Apple deve dividir o lancamento: modelos Pro em setembro de 2026 e o iPhone 18 base/18e apenas em 2027."}
+    ]
+  },
+  "APPLE 17 E": {
+    "device": "Apple iPhone 17e",
+    "signals": [
+      {"source": "Blog do iPhone", "url": "https://blogdoiphone.com/ofertas/iphone-17e-venda-brasil/", "text": "iPhone 17e comecou a ser vendido no Brasil, com lancamento em 13 de marco de 2026."}
+    ]
+  },
+  "MOTOROLA G96": {
+    "device": "Motorola Moto G96",
+    "signals": [
+      {"source": "TudoCelular", "url": "https://www.tudocelular.com/mercado/noticias/n235474/motorola-motog96-tela-snapdragon-specs-confirmadas.html", "text": "Moto G96 teve especificacoes confirmadas; sem data oficial de lancamento no Brasil."}
+    ]
+  }
+}

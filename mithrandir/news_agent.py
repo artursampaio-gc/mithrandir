@@ -83,6 +83,11 @@ def refresh_news_cache(ai: AIClient | None = None, search_fn=None,
     if not ai.available:
         raise RuntimeError("Proxy de IA nao configurado — o agente precisa do proxy.")
     search_fn = search_fn if search_fn is not None else get_search_provider(cfg)
+    if search_fn is None:
+        # Sem API de busca web, o modo-conhecimento nao conhece datas novas e so
+        # degradaria a base curada. Nao faz nada ate uma busca real ser ligada.
+        print("[agent] sem API de busca web — mantendo a base curada (news_seed.json).")
+        return []
     watchlist = watchlist or load_watchlist()
 
     # Chamadas em paralelo (o proxy e lento)

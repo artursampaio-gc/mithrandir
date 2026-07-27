@@ -13,7 +13,8 @@ from pathlib import Path
 from .. import store
 from ..config import DATA_DIR
 
-NEWS_CACHE_PATH = DATA_DIR / "news_cache.json"
+NEWS_CACHE_PATH = DATA_DIR / "news_cache.json"   # runtime (busca web real)
+NEWS_SEED_PATH = DATA_DIR / "news_seed.json"     # base curada (somente leitura)
 
 
 def _load_file(path: Path) -> dict:
@@ -25,16 +26,22 @@ def _load_file(path: Path) -> dict:
         return {}
 
 
-def load_news_cache_raw(path: Path = NEWS_CACHE_PATH) -> dict:
-    """Le o cache completo, incluindo a chave _meta.
+def _is_web(cache: dict) -> bool:
+    """True se o cache veio de busca web real (nao do modo-conhecimento)."""
+    return str((cache or {}).get("_meta", {}).get("mode", "")).startswith("busca web")
 
-    No Supabase, usa o cache gravado; se ainda vazio, cai no arquivo semeado
-    (empacotado no deploy) como base inicial.
+
+def load_news_cache_raw(path: Path = NEWS_CACHE_PATH) -> dict:
+    """Retorna a base de sinais.
+
+    Prioriza resultados de BUSCA WEB real (quando houver); caso contrario usa a
+    BASE CURADA (news_seed.json). O modo-conhecimento do agente NAO e usado como
+    fonte (ele nao conhece datas novas e so degradaria os dados).
     """
-    if store.is_supabase():
-        cached = store.get_cached("news_cache")
-        return cached if cached else _load_file(path)
-    return _load_file(path)
+    stored = store.get_cached("news_cache") if store.is_supabase() else _load_file(path)
+    if _is_web(stored):
+        return stored
+    return _load_file(NEWS_SEED_PATH)
 
 
 def save_news_cache(cache: dict, path: Path = NEWS_CACHE_PATH) -> None:
