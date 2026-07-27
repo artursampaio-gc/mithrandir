@@ -388,6 +388,9 @@ border-bottom:1px solid var(--line);padding-bottom:5px}
 .bedot{fill:#fff;stroke:var(--ink);stroke-width:2}
 .legend2{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-bottom:4px}
 .legend2 i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.mockwarn{background:var(--amber-l);border:1px solid var(--amber);color:var(--amber);
+border-radius:8px;padding:8px 11px;font-size:11.5px;font-weight:600;margin-bottom:10px;line-height:1.35}
+.rktab.mock{opacity:.6}
 .rktab th{font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
 .rktab td{font-size:12.5px;padding:6px;border-bottom:1px solid var(--line)}
 .rktab td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -702,10 +705,10 @@ function breakevenChart(v){
   const cross=`<circle class="bedot" cx="${cx}" cy="${cy}" r="4.5"/><text class="bex" x="${cx}" y="${(+cy-9).toFixed(1)}">${v.breakeven_weeks} sem</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${ylab}<polyline class="linec" points="${cp.join(' ')}"/><polyline class="linev" points="${rp.join(' ')}"/>${cross}${xlab}</svg>`;
 }
-function rankingsTable(rk){
+function rankingsTable(rk, isMock){
   const totVal=rk.reduce((a,r)=>a+(r.value||0),0)/rk.length;
   const totRev=rk.reduce((a,r)=>a+(r.reviews||0),0);
-  return `<table class="rktab"><thead><tr><th>Loja</th><th>Posição</th><th>Critério</th><th class="num">Valor</th><th class="num">Reviews</th></tr></thead><tbody>
+  return `<table class="rktab${isMock?' mock':''}"><thead><tr><th>Loja</th><th>Posição</th><th>Critério</th><th class="num">Valor</th><th class="num">Reviews</th></tr></thead><tbody>
     ${rk.map(r=>`<tr><td class="store">${r.store}</td><td>${r.position}</td><td>${r.criterio}</td><td class="num">${money2(r.value)}</td><td class="num">${(r.reviews||0).toLocaleString('pt-BR')}</td></tr>`).join('')}
     <tr class="tot"><td colspan="3">Média / Total</td><td class="num">${money2(totVal)}</td><td class="num">${totRev.toLocaleString('pt-BR')}</td></tr>
   </tbody></table>`;
@@ -737,8 +740,13 @@ function openReport(c){
   } else {
     col1=`<div class="rcol"><div class="rsec">Viabilidade</div><div class="empty">Sem base interna de vendas para este device.</div></div>`;
   }
-  const col3=`<div class="rcol"><div class="rsec">Rankings 🏆</div><div class="rsub">Tração nos marketplaces</div>
-    ${c.rankings&&c.rankings.length?rankingsTable(c.rankings):'<div class="empty">Sem dados de marketplace ainda (device pré-lançamento).</div>'}</div>`;
+  // Enquanto nao houver API de marketplace, os rankings sao dados de exemplo:
+  // marcamos de forma explicita para ninguem ler como tracao real.
+  const rkMock = STATE.mock_mode;
+  const col3=`<div class="rcol"><div class="rsec">Rankings 🏆</div>
+    <div class="rsub">Tração nos marketplaces</div>
+    ${rkMock&&c.rankings&&c.rankings.length?'<div class="mockwarn">⚠ Dados de exemplo — as APIs dos marketplaces ainda não estão conectadas. Não usar para decisão.</div>':''}
+    ${c.rankings&&c.rankings.length?rankingsTable(c.rankings,rkMock):'<div class="empty">Sem dados de marketplace ainda (device pré-lançamento).</div>'}</div>`;
   $('rcontent').innerHTML=`
     <div class="rhead"><div class="rbrand">gocase</div>
       <div class="rtitle"><h2>Análise de Viabilidade de Novo Device</h2>
