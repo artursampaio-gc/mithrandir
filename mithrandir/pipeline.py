@@ -13,7 +13,7 @@ from .db import previous_review_count, save_run
 from .internal_bi import find_similar, load_catalog, load_internal_records
 from .models import Candidate, MarketplaceSignal
 from .normalize import BRANDS, canonicalize
-from .scoring import rank_candidates
+from .scoring import rank_by_breakeven
 from .settings import load_settings
 from .viability import compute_viability
 
@@ -102,7 +102,7 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
                 case_price=st["case_price"], mold_cost=st["mold_cost"],
                 unit_cost=st["unit_cost"])
 
-    ranked = rank_candidates(list(candidates.values()))
+    ranked = rank_by_breakeven(list(candidates.values()))
     try:
         save_run(ranked, cfg.mock_mode)  # historico local (ignorado em FS read-only)
     except Exception:

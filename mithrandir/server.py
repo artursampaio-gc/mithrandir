@@ -436,7 +436,8 @@ transform:translateX(100%);transition:.25s;z-index:11;overflow-y:auto;padding:22
 </div>
 
 <div class="panel" id="p-cand">
-  <table><thead><tr><th>#</th><th>Modelo</th><th>Marca</th><th>Fase</th><th>Score</th></tr></thead>
+  <div class="hint" style="margin-bottom:10px">Ordenado por <b>tempo de breakeven</b> (crescente) — quanto antes o molde se paga, melhor o candidato.</div>
+  <table><thead><tr><th>#</th><th>Modelo</th><th>Marca</th><th>Fase</th><th>Breakeven</th></tr></thead>
   <tbody id="candrows"></tbody></table>
 </div>
 
@@ -629,16 +630,25 @@ function openEstimate(canon){
   $('detail').innerHTML=h; $('drawer').classList.add('open'); $('backdrop').classList.add('open');
 }
 
+function beWeeks(c){ return (c.viability||{}).breakeven_weeks ?? null; }
 function renderCandidates(){
   const tb=$('candrows'); tb.innerHTML="";
+  // Barra: quanto MENOR o breakeven, mais cheia (melhor). Escala pelo pior da lista.
+  const all=STATE.candidates.map(beWeeks).filter(v=>v!==null);
+  const worst=all.length?Math.max(...all):1;
   STATE.candidates.forEach((c,i)=>{
     const flags=[]; if(c.already_have_case)flags.push("já temos capinha"); if(c.similar_sold_poorly)flags.push("similar vendeu mal");
+    const be=beWeeks(c), sim=c.internal?c.internal.similar_model:null;
+    const pct=be!==null&&worst>0?Math.max(4,(1-be/worst)*100):0;
+    const beCell = be!==null
+      ? `<div class="scorebar"><div class="bar"><div class="fill" style="width:${pct}%"></div></div><b>${be.toFixed(1)} sem</b></div>`
+      : `<span style="color:var(--muted)">— sem base</span>`;
     const tr=document.createElement('tr');
     tr.innerHTML=`<td><b style="color:var(--muted)">${i+1}</b></td>
-      <td><b>${c.canonical_model}</b>${flags.length?`<br><small class="flag">⚠ ${flags.join(" · ")}</small>`:""}</td>
+      <td><b>${c.canonical_model}</b>${sim?`<br><small style="color:var(--muted)">estudo: ${sim}</small>`:""}${flags.length?`<br><small class="flag">⚠ ${flags.join(" · ")}</small>`:""}</td>
       <td>${c.brand||"—"}</td>
       <td><span class="pill ${c.phase==='pre_launch'?'pre':'post'}">${c.phase==='pre_launch'?'pré':'pós'}-lançamento</span></td>
-      <td><div class="scorebar"><div class="bar"><div class="fill" style="width:${c.score}%"></div></div><b>${c.score.toFixed(1)}</b></div></td>`;
+      <td>${beCell}</td>`;
     tr.onclick=()=>openReport(c); tb.appendChild(tr);
   });
 }

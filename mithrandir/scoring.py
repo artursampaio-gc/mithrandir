@@ -109,3 +109,28 @@ def rank_candidates(candidates: list[Candidate]) -> list[Candidate]:
     for c in candidates:
         score_candidate(c)
     return sorted(candidates, key=lambda x: x.score, reverse=True)
+
+
+def breakeven_weeks(c: Candidate):
+    """Semanas para pagar o molde, do device de estudo. None se nao houver base."""
+    return (c.viability or {}).get("breakeven_weeks")
+
+
+def _breakeven_key(c: Candidate):
+    be = breakeven_weeks(c)
+    return (
+        1 if c.already_have_case else 0,   # ja temos capinha -> nao e candidato
+        0 if be is not None else 1,        # sem base de vendas -> depois
+        be if be is not None else float("inf"),
+    )
+
+
+def rank_by_breakeven(candidates: list[Candidate]) -> list[Candidate]:
+    """Ordena por tempo de breakeven (crescente): quanto antes o molde se paga,
+    melhor o candidato. Sem marketplace real, este e o sinal mais concreto.
+
+    O score continua sendo calculado (explicabilidade), mas nao define a ordem.
+    """
+    for c in candidates:
+        score_candidate(c)
+    return sorted(candidates, key=_breakeven_key)
