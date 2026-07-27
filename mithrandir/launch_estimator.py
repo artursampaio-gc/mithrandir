@@ -22,6 +22,8 @@ from .ai.proxy import AIClient
 from .collectors.launch_calendar import load_launch_history, predict_upcoming
 from .collectors.websearch import known_devices, load_news_cache, signals_for
 from .config import Config, load_config
+from .news_miner import clear_cache as clear_mine_cache
+from .news_miner import expand_signals
 from .normalize import canonicalize
 from .overrides import override_for
 
@@ -32,6 +34,7 @@ _AI_CACHE: dict = {}
 
 def clear_ai_cache() -> None:
     _AI_CACHE.clear()
+    clear_mine_cache()
 
 
 MONTHS = {
@@ -140,8 +143,9 @@ def _ai_estimate(ai: AIClient, device: str, brand: str, family: str,
         "retorne date=null e status='incerto'.\n"
         "4) Se so houver baseline sazonal (sem noticias), a data e uma estimativa: "
         "status 'previsto' se a janela for futura; se ja passou, status='incerto'.\n"
-        "5) Use 'YYYY-MM' quando nao souber o dia. Seja conservador na confianca.\n"
-        'Responda SOMENTE um JSON: {"date":"YYYY-MM-DD|YYYY-MM|null","confidence":0..1,'
+        "5) Use 'YYYY-MM' quando nao souber o dia e 'YYYY' quando souber apenas o "
+        "ano (ex.: noticia diz 'apenas em 2027'). Seja conservador na confianca.\n"
+        'Responda SOMENTE um JSON: {"date":"YYYY-MM-DD|YYYY-MM|YYYY|null","confidence":0..1,'
         '"status":"previsto|lancado|incerto","rationale":"1 frase"}'
     )
     if prompt in _AI_CACHE:
@@ -149,16 +153,25 @@ def _ai_estimate(ai: AIClient, device: str, brand: str, family: str,
     try:
         data = ai.complete_json(
             prompt, system="Voce estima datas de lancamento de smartphones no Brasil.")
-        iso = data.get("date")
-        if isinstance(iso, str) and len(iso) == 7:  # YYYY-MM
-            iso = iso + "-01"
-        if not isinstance(iso, str):
+        iso, precision = data.get("date"), None
+        if isinstance(iso, str):
+            iso = iso.strip()
+            if len(iso) == 4 and iso.isdigit():        # "2027" -> ano estimado
+                iso, precision = f"{iso}-01-01", "year"
+            elif len(iso) == 7:                        # "2027-03"
+                iso, precision = iso + "-01", "month"
+            elif len(iso) == 10:
+                precision = "day"
+            else:
+                iso = None
+        else:
             iso = None
         status = data.get("status")
         if status not in ("previsto", "lancado", "incerto"):
             status = None
         result = {
             "iso": iso,
+            "precision": precision,
             "confidence": float(data.get("confidence", 0.5)),
             "status": status,
             "rationale": data.get("rationale", ""),
@@ -176,7 +189,9 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
     cfg = cfg or load_config()
     today = today or date.today()
     ai = AIClient(cfg.ai)
-    cache = load_news_cache()
+    # Minera as noticias: uma noticia pode citar varios aparelhos com datas
+    # diferentes -> vira um sinal por aparelho (ex.: Pro Max e o base de 2027).
+    cache = expand_signals(ai, load_news_cache())
 
     # Universo de devices: previsao sazonal + noticias + intel manual
     devices: dict[str, dict] = {}
@@ -226,7 +241,8 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
 
         if res:
             iso, conf, src, rationale = res["iso"], res["confidence"], "ia", res["rationale"]
-            precision = "day" if (iso and len(iso) == 10 and not iso.endswith("-01")) else "month"
+            precision = res.get("precision") or (
+                "day" if (iso and len(iso) == 10 and not iso.endswith("-01")) else "month")
             status = res["status"] or _status_for(iso, today)
             # nunca afirmar 'lancado' sem evidencia de noticia
             if status == "lancado" and not signals:
@@ -235,7 +251,30 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
             iso, precision, conf, src, rationale = _heuristic(signals, seasonal, today)
             status = _status_for(iso, today)
 
+        # Fallback sazonal: sem data confirmada (IA/heuristica devolveram nulo),
+        # mas ha previsao pelo antecessor caindo no futuro -> mostra como estimativa
+        # 'previsto' (rotulo claro) em vez de jogar em "sem data confirmada".
+        if not iso and seasonal:
+            try:
+                seasonal_future = date.fromisoformat(seasonal) >= today
+            except ValueError:
+                seasonal_future = False
+            if seasonal_future:
+                iso, precision, conf = seasonal, "month", 0.4
+                src, status = "sazonal", "previsto"
+                rationale = ("Sem data confirmada; estimativa pelo lancamento do "
+                             "antecessor no ano anterior.")
+
         ov = override_for(canon) if with_overrides else None
+
+        # Lancamentos de anos anteriores nao pertencem ao calendario de scouting
+        # (a mineracao de noticias costuma citar geracoes passadas como referencia).
+        if iso and not ov:
+            try:
+                if date.fromisoformat(iso).year < today.year:
+                    continue
+            except ValueError:
+                pass
 
         # Descarta ruido: device so-sazonal (sem noticia e sem intel) que nao aponta
         # para uma data futura -> ou ja passou, ou nem data tem. Mantem noticias/intel.

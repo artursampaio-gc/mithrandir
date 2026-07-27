@@ -328,6 +328,7 @@ margin-bottom:6px;background:var(--bg);transition:background .12s}
 border-radius:10px;padding:9px 13px;cursor:pointer;min-width:180px;transition:background .12s}
 .pchip:hover{background:var(--green-l)}
 .pchip.unk{border-left-color:var(--muted)}.pchip.unk:hover{background:var(--line)}
+.pchip.yr{border-left-color:var(--gold)}.pchip.yr:hover{background:var(--gold-l)}
 .pchip .pn{font-weight:650;font-size:13px}
 .pchip .pm{font-size:11px;color:var(--muted);margin-top:2px}
 /* intel */
@@ -531,6 +532,7 @@ function fmtDate(iso,prec){
   if(!iso) return {big:"Sem data",small:"a confirmar"};
   const [y,m,d]=iso.split('-').map(Number);
   if(prec==='day') return {big:`${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`,small:MONTHS_PT[m-1]};
+  if(prec==='year') return {big:`${y}`,small:"ano estimado · mês a definir"};
   return {big:`${MONTHS_PT[m-1]}/${y}`,small:"mês estimado"};
 }
 function monthKey(iso){ if(!iso) return "Sem data confirmada"; const[y,m]=iso.split('-').map(Number); return `${MONTHS_PT[m-1]} de ${y}`; }
@@ -579,8 +581,12 @@ function renderCalendar(){
   const idx=years.indexOf(calYear);
   const list=filteredCal();
   const undated=list.filter(e=>!e.estimated_date);
+  // Precisao "ano": sabemos o ano mas nao o mes -> nao plotar num mes especifico
+  const yearOnly=list.filter(e=>e.estimated_date&&e.date_precision==='year'
+                                &&+e.estimated_date.slice(0,4)===calYear);
   const byMonth={};
-  list.filter(e=>e.estimated_date).forEach(e=>{const k=e.estimated_date.slice(0,7);(byMonth[k]=byMonth[k]||[]).push(e);});
+  list.filter(e=>e.estimated_date&&e.date_precision!=='year')
+      .forEach(e=>{const k=e.estimated_date.slice(0,7);(byMonth[k]=byMonth[k]||[]).push(e);});
   const cy=curYm();
 
   // Paginacao por ano
@@ -599,6 +605,14 @@ function renderCalendar(){
       ${evs.length?evs.map(miniCard).join(''):'<div class="mempty">—</div>'}</div>`;
   }
   html+='</div>';
+
+  // Ano definido, mes a definir
+  if(yearOnly.length){
+    html+=`<div class="sech">📌 Em ${calYear} · mês a definir</div><div class="pastwrap">`;
+    yearOnly.forEach(e=>{html+=`<div class="pchip yr" onclick="openEstimate('${e.canonical}')">
+      <div class="pn">${e.device}</div><div class="pm">${miniMeta(e)}</div></div>`;});
+    html+='</div>';
+  }
 
   // Sem data confirmada (independe do ano)
   if(undated.length){
