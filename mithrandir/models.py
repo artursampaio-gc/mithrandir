@@ -55,7 +55,8 @@ class Candidate:
     sources: list[str] = field(default_factory=list)
 
     # Rankings por loja (para a analise de viabilidade)
-    rankings: list = field(default_factory=list)  # [{store,position,criterio,value,reviews}]
+    rankings: list = field(default_factory=list)  # [{store,position,value,reviews}]
+    rankings_real: bool = False   # True quando vem de coleta real (nao do mock)
 
     # Preenchido pelo motor de score
     score: float = 0.0

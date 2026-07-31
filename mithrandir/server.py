@@ -791,7 +791,7 @@ function openReport(c){
   }
   // Enquanto nao houver API de marketplace, os rankings sao dados de exemplo:
   // marcamos de forma explicita para ninguem ler como tracao real.
-  const rkMock = STATE.mock_mode;
+  const rkMock = !c.rankings_real;
   const col3=`<div class="rcol"><div class="rsec">Rankings 🏆</div>
     <div class="rsub">Tração nos marketplaces</div>
     ${rkMock&&c.rankings&&c.rankings.length?'<div class="mockwarn">⚠ Dados de exemplo — as APIs dos marketplaces ainda não estão conectadas. Não usar para decisão.</div>':''}

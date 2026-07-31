@@ -8,6 +8,8 @@ from __future__ import annotations
 from .ai.proxy import AIClient
 from .config import Config, load_config
 from .collectors import mercadolivre, news
+from .collectors.marketplace import load_snapshot as load_mkt_snapshot
+from .collectors.marketplace import to_rankings
 from .collectors.launch_calendar import load_launch_history, predict_upcoming
 from .db import previous_review_count, save_run
 from .internal_bi import find_similar, load_catalog, load_internal_records
@@ -47,6 +49,7 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
     internal = load_internal_records()
     catalog = load_catalog()
     st = load_settings()
+    mkt_snapshot = load_mkt_snapshot()
 
     candidates: dict[str, Candidate] = {}
 
@@ -79,7 +82,10 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
             price=o.get("price"), offers=o.get("offers", 0) or 0,
         )
         c.momentum = _compute_momentum(o, key)
-        c.rankings = o.get("rankings", [])
+        # Coleta real de marketplace tem precedencia sobre o mock
+        real = to_rankings(key, mkt_snapshot)
+        c.rankings = real or o.get("rankings", [])
+        c.rankings_real = bool(real)
         if o["raw_name"] not in c.raw_names:
             c.raw_names.append(o["raw_name"])
         c.sources.append(f"{o['source']}: {o['raw_name']}")
