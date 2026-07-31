@@ -407,7 +407,8 @@ border-radius:8px;padding:8px 11px;font-size:11.5px;font-weight:600;margin-botto
 .rktab td{font-size:12.5px;padding:6px;border-bottom:1px solid var(--line)}
 .rktab td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rktab td:nth-child(2){white-space:nowrap}
-.rktab .store{font-weight:700;text-transform:capitalize}
+.rktab .store{font-weight:700}
+.rktab tr.off td{color:var(--muted);opacity:.65}
 .rktab tr.tot td{font-weight:800;border-top:2px solid var(--gold-d);border-bottom:none}
 @media(max-width:900px){.rbody{grid-template-columns:1fr}}
 /* drawer */
@@ -745,12 +746,20 @@ function breakevenChart(v){
   const cross=`<circle class="bedot" cx="${cx}" cy="${cy}" r="4.5"/><text class="bex" x="${cx}" y="${(+cy-9).toFixed(1)}">${v.breakeven_weeks} sem</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${ylab}<polyline class="linec" points="${cp.join(' ')}"/><polyline class="linev" points="${rp.join(' ')}"/>${cross}${xlab}</svg>`;
 }
+const STORES=[['amazon','Amazon'],['mercadolivre','Mercado Livre'],['magazineluiza','Magazine Luiza']];
 function rankingsTable(rk, isMock){
-  const totVal=rk.reduce((a,r)=>a+(r.value||0),0)/rk.length;
-  const totRev=rk.reduce((a,r)=>a+(r.reviews||0),0);
-  return `<table class="rktab${isMock?' mock':''}"><thead><tr><th>Loja</th><th>Posição</th><th>Critério</th><th class="num">Valor</th><th class="num">Reviews</th></tr></thead><tbody>
-    ${rk.map(r=>`<tr><td class="store">${r.store}</td><td>${r.position}</td><td>${r.criterio}</td><td class="num">${money2(r.value)}</td><td class="num">${(r.reviews||0).toLocaleString('pt-BR')}</td></tr>`).join('')}
-    <tr class="tot"><td colspan="3">Média / Total</td><td class="num">${money2(totVal)}</td><td class="num">${totRev.toLocaleString('pt-BR')}</td></tr>
+  // Sempre as 3 lojas (uma linha cada); sem dado -> "—", e nao entra na media
+  const by={}; (rk||[]).forEach(r=>{ if(!by[r.store]) by[r.store]=r; });
+  const rows=STORES.map(([k,label])=>({label, r:by[k]||null}));
+  const vals=rows.map(x=>x.r&&x.r.value).filter(v=>v>0);
+  const avg=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+  const totRev=rows.reduce((a,x)=>a+((x.r&&x.r.reviews)||0),0);
+  return `<table class="rktab${isMock?' mock':''}"><thead><tr><th>Loja</th><th>Posição</th><th class="num">Valor</th><th class="num">Reviews</th></tr></thead><tbody>
+    ${rows.map(({label,r})=>`<tr${r?'':' class="off"'}><td class="store">${label}</td>
+      <td>${r&&r.position?r.position:'—'}</td>
+      <td class="num">${r&&r.value?money2(r.value):'—'}</td>
+      <td class="num">${r&&r.reviews?r.reviews.toLocaleString('pt-BR'):'—'}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="2">Média / Total</td><td class="num">${avg!==null?money2(avg):'—'}</td><td class="num">${totRev.toLocaleString('pt-BR')}</td></tr>
   </tbody></table>`;
 }
 function openReport(c){
