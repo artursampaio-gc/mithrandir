@@ -7,6 +7,7 @@ ser plugado para os casos ambiguos (ver `canonicalize_with_ai`).
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -48,19 +49,44 @@ def _unglue_brand(text: str) -> str:
     return re.sub(rf"({tokens})(\d)", r"\1 \2", text, flags=re.IGNORECASE)
 
 
+# Ruido tipico de titulo de anuncio de marketplace
+_CATEGORIA = r"smartphone|celular|aparelho|telefone"
+_CONECTOR = r"de|com|para|e"
+_COR = (r"preto|preta|branco|branca|azul|verde|roxo|roxa|violeta|cinza|prata|"
+        r"prateado|dourado|dourada|titanio|grafite|rosa|amarelo|vermelho|bege|"
+        r"black|blue|white|purple|midnight|silver|gold|green|pink|"
+        r"intenso|escuro|claro|natural|deserto")
+_SPEC = r"ram|rom|boost|nfc|global|camera|cam|tela|memoria|polegadas|selfie|tripla"
+
+
+def _strip_accents(t: str) -> str:
+    t = unicodedata.normalize("NFKD", t)
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 def _clean(text: str) -> str:
-    t = _unglue_brand(text).lower().strip()
+    t = _strip_accents(_unglue_brand(text)).lower().strip()
     t = re.sub(r"[®™]", "", t)
     for pat, rep in REPLACEMENTS:
         t = re.sub(pat, rep.lower(), t)
+    # Titulos de marketplace: corta o que vem depois de "|" e o que esta em ()
+    t = re.sub(r"\|.*$", " ", t)
+    t = re.sub(r"\([^)]*\)", " ", t)
     # Remove ruido comum de anuncios: armazenamento, rede, dual sim
     t = re.sub(r"\b\d{1,4}\s?(gb|tb)\b", " ", t)
     t = re.sub(r"\b[2345]g\b", " ", t)
     t = re.sub(r"\bdual\b|\bsim\b|\bnfc\b", " ", t)
+    t = re.sub(rf"\bip\d{{2}}\b|\b\d+\s?mp\b|\b\d+(\.\d+)?\"", " ", t)
+    # Palavras de anuncio: categoria, conectores, cores e specs
+    t = re.sub(rf"\b({_CATEGORIA})\b", " ", t)
+    t = re.sub(rf"\b({_COR})\b", " ", t)
+    t = re.sub(rf"\b({_SPEC})\b", " ", t)
+    t = re.sub(rf"\b({_CONECTOR})\b", " ", t)
     # Separa sufixo colado ao numero de geracao: "s26fe" -> "s26 fe"
     t = re.sub(r"(\d)([a-z])", r"\1 \2", t)
-    # Pontuacao solta no fim de token ("Galaxy S25." -> "Galaxy S25")
+    # Pontuacao solta ("Galaxy S25." / "g86 - 256GB" -> "g86")
     t = re.sub(r"[.,;:]+(\s|$)", r"\1", t)
+    t = re.sub(r"[-–—]+(\s|$)", r"\1", t)   # "g06-" (sobra de "g06-128GB") -> "g06"
     t = re.sub(r"\s+", " ", t)
     return t.strip()
 
