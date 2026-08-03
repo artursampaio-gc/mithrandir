@@ -31,8 +31,23 @@ def _rebuild_candidates() -> None:
 def _rebuild_calendar() -> None:
     """Recalcula o calendario base (IA) e aplica a intel. Pesado — usar no cron/refresh."""
     base = build_calendar(_cfg, with_overrides=False)
+    # preserva devices adicionados manualmente ("Acompanhar")
+    manual = [e for e in (store.get_cached("calendar_base") or []) if e.get("manual")]
+    known = {e.get("canonical") for e in base}
+    base = base + [e for e in manual if e.get("canonical") not in known]
     store.set_cached("calendar_base", base)
-    store.set_cached("calendar", apply_overrides_to(base))
+    store.set_cached("calendar", _calendar_from(base))
+
+
+def _removed() -> set:
+    """Devices que o analista removeu do calendario (nao voltam no recalculo)."""
+    return set(store.get_cached("calendar_removed") or [])
+
+
+def _calendar_from(base: list) -> list:
+    """Calendario final = base + intel do analista - removidos."""
+    rem = _removed()
+    return [e for e in apply_overrides_to(base) if e.get("canonical") not in rem]
 
 
 def _apply_intel() -> None:
@@ -41,7 +56,7 @@ def _apply_intel() -> None:
     if base is None:
         _rebuild_calendar()
     else:
-        store.set_cached("calendar", apply_overrides_to(base))
+        store.set_cached("calendar", _calendar_from(base))
 
 
 def _sync_sheet() -> int:
@@ -176,24 +191,54 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "updated": updated, "state": _state()})
         elif self.path == "/api/device/search":
             self._search_device(body)
+        elif self.path == "/api/device/track":
+            self._track_device(body)
+        elif self.path == "/api/device/remove":
+            self._remove_device(body)
         elif self.path in ("/api/cron", "/api/cron/scout"):
             self._run_cron()
         else:
             self._send(404, b"not found", "text/plain")
 
     def _search_device(self, body: dict) -> None:
-        """Pesquisa sob demanda um device e o adiciona ao calendario."""
+        """Pesquisa sob demanda: apenas estima e devolve (nao adiciona)."""
         device = (body.get("device") or "").strip()
         if not device:
             self._json({"ok": False, "error": "Informe o nome do device."}, 400)
             return
         est = estimate_device(device, _cfg)
+        already = any(e.get("canonical") == est["canonical"]
+                      for e in (store.get_cached("calendar") or []))
+        self._json({"ok": True, "estimate": est, "already": already})
+
+    def _track_device(self, body: dict) -> None:
+        """Adiciona ao calendario um device pesquisado ('Acompanhar')."""
+        est = body.get("estimate") or {}
+        canon = (est.get("canonical") or "").strip()
+        if not canon:
+            self._json({"ok": False, "error": "Pesquise um device antes."}, 400)
+            return
+        est["manual"] = True   # sobrevive ao recalculo
         base = [e for e in (store.get_cached("calendar_base") or [])
-                if e.get("canonical") != est["canonical"]]
+                if e.get("canonical") != canon]
         base.append(est)
         store.set_cached("calendar_base", base)
-        store.set_cached("calendar", apply_overrides_to(base))
-        self._json({"ok": True, "estimate": est, "state": _state()})
+        store.set_cached("calendar_removed", [c for c in _removed() if c != canon])
+        store.set_cached("calendar", _calendar_from(base))
+        self._json({"ok": True, "state": _state()})
+
+    def _remove_device(self, body: dict) -> None:
+        """Remove um device do calendario (nao volta no recalculo)."""
+        canon = (body.get("canonical") or "").strip()
+        if not canon:
+            self._json({"ok": False, "error": "Device invalido."}, 400)
+            return
+        base = [e for e in (store.get_cached("calendar_base") or [])
+                if e.get("canonical") != canon]
+        store.set_cached("calendar_base", base)
+        store.set_cached("calendar_removed", sorted(_removed() | {canon}))
+        store.set_cached("calendar", _calendar_from(base))
+        self._json({"ok": True, "state": _state()})
 
     def _run_cron(self) -> None:
         """Job diario: atualiza noticias (best-effort) + recalcula tudo."""
@@ -374,6 +419,9 @@ textarea{min-height:70px;resize:vertical}
 .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:150px}
 .btn{margin-top:14px;background:var(--gold);color:#1e1e1e;border:none;border-radius:9px;padding:10px 20px;
 font-size:14px;font-weight:700;cursor:pointer}.btn:hover{background:var(--gold-b)}
+.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+.btn.danger:hover{background:#3a1512}
+.btn:disabled{opacity:.6;cursor:default}
 .msg{margin-top:12px;font-size:13px;padding:10px 14px;border-radius:9px;display:none}
 .msg.ok{background:var(--green-l);color:var(--green);display:block}.msg.err{background:#3a1512;color:var(--red);display:block}
 .ovitem{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line);font-size:13.5px}
@@ -695,7 +743,9 @@ function openEstimate(canon){
       <div class="kv"><span>Confiança</span><span>${(e.confidence*100).toFixed(0)}%</span></div></div>
     <div class="sec"><h4>Justificativa</h4><div style="font-size:13.5px">${e.rationale||'—'}</div></div>`;
   if(evi)h+=`<div class="sec"><h4>Evidências</h4>${evi}</div>`;
-  h+=`<div class="sec"><button class="btn" onclick='prefillIntel(${JSON.stringify(e.device)})'>✋ Tenho info melhor</button></div>`;
+  h+=`<div class="sec" style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" onclick='prefillIntel(${JSON.stringify(e.device)})'>✋ Tenho info melhor</button>
+    <button class="btn danger" onclick='removeDevice(${JSON.stringify(e.canonical)},${JSON.stringify(e.device)})'>🗑 Remover</button></div>`;
   $('detail').innerHTML=h; $('drawer').classList.add('open'); $('backdrop').classList.add('open');
 }
 
@@ -883,23 +933,44 @@ $('agent').onclick=async()=>{const b=$('agent');b.disabled=true;b.textContent='B
   b.disabled=false;b.textContent='🔎 Buscar notícias (IA)';};
 $('close').onclick=closeDrawer; $('backdrop').onclick=closeDrawer;
 $('rclose').onclick=closeReport; $('reportback').onclick=closeReport;
+let lastSearch=null;   // resultado da ultima pesquisa (ainda nao acompanhado)
 async function searchDevice(){
   const inp=$('q-device'), btn=$('q-go'), msg=$('q-msg');
-  const device=inp.value.trim(); msg.className='msg';
+  const device=inp.value.trim(); msg.className='msg'; lastSearch=null;
   if(!device){msg.className='msg err';msg.textContent='Digite o nome de um device.';return;}
   btn.disabled=true; btn.textContent='Pesquisando…';
   const r=await post('/api/device/search',{device});
-  if(r.ok&&r.state&&!r.state.loading){
-    STATE=r.state; const e=r.estimate;
-    if(e.estimated_date) calYear=+e.estimated_date.slice(0,4);   // vai para o ano encontrado
-    renderAll();
+  if(r.ok&&r.estimate){
+    const e=r.estimate; lastSearch=e;
     const dt=fmtDate(e.estimated_date,e.date_precision);
     msg.className='msg ok';
     msg.innerHTML=`<b>${e.device}</b> — ${dt.big} · ${e.status} · ${srcLabel(e.source)} `
-      +`(${(e.confidence*100).toFixed(0)}%)<br><span style="opacity:.85">${e.rationale||''}</span>`;
-    inp.value='';
+      +`(${(e.confidence*100).toFixed(0)}%)<br><span style="opacity:.85">${e.rationale||''}</span>`
+      +`<div style="margin-top:10px">`
+      +(r.already?`<span style="color:var(--muted)">Já está no calendário.</span>`
+                 :`<button class="btn" id="q-track" style="margin-top:0">➕ Acompanhar</button>`)
+      +`</div>`;
+    const tb=$('q-track'); if(tb) tb.onclick=trackDevice;
   } else { msg.className='msg err'; msg.textContent=r.error||'Falha na pesquisa.'; }
   btn.disabled=false; btn.textContent='🔎 Pesquisar';
+}
+async function trackDevice(){
+  if(!lastSearch) return;
+  const b=$('q-track'); b.disabled=true; b.textContent='Adicionando…';
+  const r=await post('/api/device/track',{estimate:lastSearch});
+  if(r.ok&&r.state&&!r.state.loading){
+    STATE=r.state;
+    if(lastSearch.estimated_date) calYear=+lastSearch.estimated_date.slice(0,4);
+    renderAll();
+    $('q-msg').className='msg ok';
+    $('q-msg').innerHTML=`<b>${lastSearch.device}</b> adicionado ao calendário.`;
+    $('q-device').value=''; lastSearch=null;
+  } else { b.disabled=false; b.textContent='➕ Acompanhar'; }
+}
+async function removeDevice(canon,nome){
+  if(!confirm(`Remover "${nome}" do calendário?`)) return;
+  const r=await post('/api/device/remove',{canonical:canon});
+  if(r.ok&&r.state&&!r.state.loading){ STATE=r.state; closeDrawer(); renderAll(); }
 }
 $('q-go').onclick=searchDevice;
 $('q-device').addEventListener('keydown',e=>{if(e.key==='Enter')searchDevice();});
