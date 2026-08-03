@@ -310,6 +310,70 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
     return [e.to_dict() for e in estimates]
 
 
+def estimate_device(device: str, cfg: Config | None = None,
+                    today: date | None = None) -> dict:
+    """Pesquisa sob demanda a data de lancamento de UM device especifico.
+
+    Junta as evidencias que temos para ele: noticias mineradas, previsao sazonal
+    do antecessor e a coleta de marketplace (se esta a venda, ja foi lancado).
+    """
+    cfg = cfg or load_config()
+    today = today or date.today()
+    ai = AIClient(cfg.ai)
+    parsed = canonicalize(device)
+    canon = parsed.canonical
+
+    signals = list(signals_for(canon, expand_signals(ai, load_news_cache())))
+
+    # Evidencia forte: esta a venda em marketplace -> ja lancado
+    try:
+        from .collectors.marketplace import load_snapshot
+        entry = load_snapshot().get(canon)
+    except Exception:
+        entry = None
+    if entry:
+        for site, d in (entry.get("sites") or {}).items():
+            pos = f" na posicao #{d['rank']}" if d.get("rank") else ""
+            signals.append({"source": site, "url": "",
+                            "text": f"Ja esta a venda em {site}{pos} — portanto ja foi lancado."})
+
+    # Baseline sazonal: o antecessor desta linha, se estiver no historico
+    seasonal = None
+    if parsed.generation:
+        from .collectors.launch_calendar import _next_gen_name
+        for rec in load_launch_history():
+            nxt = _next_gen_name(rec["canonical_model"], rec["generation"])
+            if canonicalize(nxt).canonical == canon:
+                try:
+                    base = date.fromisoformat(rec["launch_date"])
+                    seasonal = base.replace(year=base.year + 1).isoformat()
+                except ValueError:
+                    pass
+                break
+
+    res = _ai_estimate(ai, device, parsed.brand, parsed.family, signals, seasonal, today) \
+        if ai.available else None
+    if res:
+        iso, conf, src, rationale = res["iso"], res["confidence"], "ia", res["rationale"]
+        precision = res.get("precision") or (
+            "day" if (iso and len(iso) == 10 and not iso.endswith("-01")) else "month")
+        status = res["status"] or _status_for(iso, today)
+    else:
+        iso, precision, conf, src, rationale = _heuristic(signals, seasonal, today)
+        status = _status_for(iso, today)
+
+    est = LaunchEstimate(
+        canonical=canon, device=device.strip(), brand=parsed.brand, family=parsed.family,
+        estimated_date=iso, date_precision=precision, confidence=round(conf, 2),
+        status=status, source=src, rationale=rationale,
+        evidence=[{"source": s.get("source"), "url": s.get("url"), "text": s.get("text")}
+                  for s in signals],
+    ).to_dict()
+
+    ov = override_for(canon)   # intel do analista continua tendo precedencia
+    return _apply_override(est, ov, today) if ov else est
+
+
 def _norm_iso(iso):
     return (iso + "-01") if (iso and len(iso) == 7) else iso
 

@@ -13,7 +13,8 @@ from . import store
 from .ai.proxy import AIClient
 from .config import ROOT, load_config
 from .intel_parser import parse_intel
-from .launch_estimator import apply_overrides_to, build_calendar, clear_ai_cache
+from .launch_estimator import (apply_overrides_to, build_calendar, clear_ai_cache,
+                               estimate_device)
 from .overrides import add_override, delete_override, load_overrides
 from .pipeline import run_pipeline
 from .settings import load_settings, save_settings
@@ -173,10 +174,26 @@ class Handler(BaseHTTPRequestHandler):
             clear_ai_cache()
             _rebuild_calendar()
             self._json({"ok": True, "updated": updated, "state": _state()})
+        elif self.path == "/api/device/search":
+            self._search_device(body)
         elif self.path in ("/api/cron", "/api/cron/scout"):
             self._run_cron()
         else:
             self._send(404, b"not found", "text/plain")
+
+    def _search_device(self, body: dict) -> None:
+        """Pesquisa sob demanda um device e o adiciona ao calendario."""
+        device = (body.get("device") or "").strip()
+        if not device:
+            self._json({"ok": False, "error": "Informe o nome do device."}, 400)
+            return
+        est = estimate_device(device, _cfg)
+        base = [e for e in (store.get_cached("calendar_base") or [])
+                if e.get("canonical") != est["canonical"]]
+        base.append(est)
+        store.set_cached("calendar_base", base)
+        store.set_cached("calendar", apply_overrides_to(base))
+        self._json({"ok": True, "estimate": est, "state": _state()})
 
     def _run_cron(self) -> None:
         """Job diario: atualiza noticias (best-effort) + recalcula tudo."""
@@ -299,6 +316,11 @@ border-radius:7px;padding:5px 10px;cursor:pointer}.evtbtn:hover{background:var(-
 .filters input[type=text],.filters select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--card)}
 .filters input[type=text]{flex:1;min-width:150px}
 .fmini{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.searchbox{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);
+border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.searchbox input{flex:1;min-width:240px}
+.searchbox .btn{margin-top:0;white-space:nowrap}
+.searchbox .msg{flex-basis:100%;margin-top:0}
 .pager{display:flex;align-items:center;gap:8px;margin:2px 0 16px}
 .pgbtn{width:36px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:9px;cursor:pointer;
 font-size:14px;color:var(--ink);font-weight:700}
@@ -439,6 +461,11 @@ transform:translateX(100%);transition:.25s;z-index:11;overflow-y:auto;padding:22
 </div>
 
 <div class="panel active" id="p-cal">
+  <div class="searchbox">
+    <input type="text" id="q-device" placeholder="Pesquisar um device específico (ex.: Samsung Galaxy A57)…">
+    <button class="btn" id="q-go">🔎 Pesquisar</button>
+    <div class="msg" id="q-msg"></div>
+  </div>
   <div class="filters">
     <input type="text" id="f-q" placeholder="Buscar device...">
     <select id="f-brand"><option value="">Todas as marcas</option></select>
@@ -856,6 +883,26 @@ $('agent').onclick=async()=>{const b=$('agent');b.disabled=true;b.textContent='B
   b.disabled=false;b.textContent='🔎 Buscar notícias (IA)';};
 $('close').onclick=closeDrawer; $('backdrop').onclick=closeDrawer;
 $('rclose').onclick=closeReport; $('reportback').onclick=closeReport;
+async function searchDevice(){
+  const inp=$('q-device'), btn=$('q-go'), msg=$('q-msg');
+  const device=inp.value.trim(); msg.className='msg';
+  if(!device){msg.className='msg err';msg.textContent='Digite o nome de um device.';return;}
+  btn.disabled=true; btn.textContent='Pesquisando…';
+  const r=await post('/api/device/search',{device});
+  if(r.ok&&r.state&&!r.state.loading){
+    STATE=r.state; const e=r.estimate;
+    if(e.estimated_date) calYear=+e.estimated_date.slice(0,4);   // vai para o ano encontrado
+    renderAll();
+    const dt=fmtDate(e.estimated_date,e.date_precision);
+    msg.className='msg ok';
+    msg.innerHTML=`<b>${e.device}</b> — ${dt.big} · ${e.status} · ${srcLabel(e.source)} `
+      +`(${(e.confidence*100).toFixed(0)}%)<br><span style="opacity:.85">${e.rationale||''}</span>`;
+    inp.value='';
+  } else { msg.className='msg err'; msg.textContent=r.error||'Falha na pesquisa.'; }
+  btn.disabled=false; btn.textContent='🔎 Pesquisar';
+}
+$('q-go').onclick=searchDevice;
+$('q-device').addEventListener('keydown',e=>{if(e.key==='Enter')searchDevice();});
 $('s-save').onclick=async()=>{
   const b=$('s-save'),msg=$('s-msg'); b.disabled=true; b.textContent='Salvando…'; msg.className='msg';
   const patch={case_price:+$('s-case').value,mold_cost:+$('s-mold').value,unit_cost:+$('s-unit').value,
