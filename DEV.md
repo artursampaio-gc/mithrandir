@@ -165,6 +165,13 @@ Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,ne
    treino), então o "modo conhecimento" só degradava os dados. Falta uma **API de
    busca web**: plugar em `collectors/websearch.py::get_search_provider` (hoje `None`);
    feito isso, o agente volta a atualizar sozinho e sobrepõe a base curada.
+   O **critério de busca já está pronto**: `queries_for(device)` monta 3 consultas
+   por aparelho, todas com palavra-chave de data (`"release date"`, `data de
+   lançamento Brasil`, `lançamento Brasil preço disponibilidade`) e `search_all`
+   junta/deduplica os resultados. O provedor só precisa receber a query e devolver
+   `[{title,url,snippet}]` — não monta critério nenhum. Vale tanto para o agente
+   (`news_agent`) quanto para a pesquisa sob demanda do app
+   (`launch_estimator.estimate_device` → `_web_signals`).
 3. **Timeline de vendas.** A tabela `daily_ranking` existe mas ainda não é populada;
    quando o marketplace for real, gravar o top-N diário para a curva "bombou no
    lançamento vs engrenou depois".

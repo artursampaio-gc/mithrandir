@@ -19,15 +19,18 @@ from pathlib import Path
 
 from .ai.proxy import AIClient
 from .collectors.websearch import (NEWS_CACHE_PATH, get_search_provider,
-                                   load_news_cache_raw, save_news_cache)
+                                   load_news_cache_raw, queries_for,
+                                   save_news_cache, search_all)
 from .config import DATA_DIR, load_config
 from .normalize import canonicalize
 
 WATCHLIST_PATH = DATA_DIR / "watchlist.json"
 
+# Sem "query" fixa: quem monta o criterio de busca e `queries_for`, que sempre
+# injeta as palavras-chave de data ("release date", "data de lancamento").
 DEFAULT_WATCHLIST = [
-    {"device": "Samsung Galaxy S26 FE", "query": "Samsung Galaxy S26 FE lancamento Brasil"},
-    {"device": "Apple iPhone 18 Pro", "query": "iPhone 18 Pro lancamento data 2026"},
+    {"device": "Samsung Galaxy S26 FE"},
+    {"device": "Apple iPhone 18 Pro"},
 ]
 
 
@@ -82,7 +85,6 @@ def watchlist_from_base(top_n: int = 16, recent_months: int = 3,
         by_brand[brand] = by_brand.get(brand, 0) + 1
         out.append({
             "device": nxt,
-            "query": f"{nxt} lancamento Brasil data",
             "brand": brand,
             "base_device": name,
             "base_recent_units": recent,
@@ -114,13 +116,20 @@ def load_watchlist(path: Path = WATCHLIST_PATH) -> list[dict]:
     return merged or DEFAULT_WATCHLIST
 
 
-def _signals_from_search(ai: AIClient, query: str, results: list[dict]) -> list[dict]:
+def _signals_from_search(ai: AIClient, device: str, results: list[dict]) -> list[dict]:
     evidence = "\n".join(
         f"- {r.get('title','')} ({r.get('url','')}): {r.get('snippet','')}" for r in results
     ) or "(sem resultados)"
     prompt = (
-        "Resultados de busca sobre lancamento de celular:\n" + evidence + "\n\n"
-        "Extraia ate 3 sinais objetivos sobre a data de lancamento NO BRASIL. "
+        f"Resultados de busca sobre o lancamento do {device}:\n" + evidence + "\n\n"
+        "Extraia ate 3 sinais objetivos sobre a data de lancamento NO BRASIL.\n"
+        "Regras:\n"
+        "1) Prefira resultados com DATA explicita (dia/mes/ano ou mes/ano); descarte "
+        "review, preco e ficha tecnica sem data.\n"
+        "2) Copie a data como ela aparece no resultado — nao arredonde nem deduza "
+        "pela geracao anterior.\n"
+        "3) Se a data for do lancamento GLOBAL (e nao do Brasil), diga isso na frase.\n"
+        "4) Se nenhum resultado trouxer data, devolva uma lista vazia.\n"
         "Responda SOMENTE JSON: "
         '{"signals":[{"source":"veiculo","text":"frase com a data/situacao","url":"link"}]}'
     )
@@ -140,8 +149,9 @@ def _signals_from_knowledge(ai: AIClient, device: str) -> list[dict]:
 def _collect_for(ai: AIClient, item: dict, search_fn) -> list[dict]:
     try:
         if search_fn:
-            results = search_fn(item.get("query", item["device"]))
-            return _signals_from_search(ai, item.get("query", item["device"]), results)
+            # varias consultas por device, todas com palavra-chave de data
+            results = search_all(search_fn, queries_for(item["device"], item.get("query", "")))
+            return _signals_from_search(ai, item["device"], results)
         return _signals_from_knowledge(ai, item["device"])
     except Exception as e:
         print(f"[agent] falha em {item['device']}: {e}")

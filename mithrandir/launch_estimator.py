@@ -20,7 +20,9 @@ from typing import Optional
 
 from .ai.proxy import AIClient
 from .collectors.launch_calendar import load_launch_history, predict_upcoming
-from .collectors.websearch import known_devices, load_news_cache, signals_for
+from .collectors.websearch import (get_search_provider, known_devices,
+                                   load_news_cache, queries_for, search_all,
+                                   signals_for)
 from .config import Config, load_config
 from .news_miner import clear_cache as clear_mine_cache
 from .news_miner import expand_signals
@@ -310,12 +312,29 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
     return [e.to_dict() for e in estimates]
 
 
+def _web_signals(ai: AIClient, device: str, cfg: Config) -> list[dict]:
+    """Sinais vindos de busca web ao vivo. Lista vazia se nao houver provedor."""
+    search_fn = get_search_provider(cfg)
+    if not search_fn or not ai.available:
+        return []
+    from .news_agent import _signals_from_search
+    try:
+        results = search_all(search_fn, queries_for(device))
+        if not results:
+            return []
+        return _signals_from_search(ai, device, results) or []
+    except Exception as e:
+        print(f"[estimator] busca web falhou para {device}: {e}")
+        return []
+
+
 def estimate_device(device: str, cfg: Config | None = None,
                     today: date | None = None) -> dict:
     """Pesquisa sob demanda a data de lancamento de UM device especifico.
 
-    Junta as evidencias que temos para ele: noticias mineradas, previsao sazonal
-    do antecessor e a coleta de marketplace (se esta a venda, ja foi lancado).
+    Junta as evidencias que temos para ele: busca web (quando ha provedor),
+    noticias mineradas, previsao sazonal do antecessor e a coleta de marketplace
+    (se esta a venda, ja foi lancado).
     """
     cfg = cfg or load_config()
     today = today or date.today()
@@ -324,6 +343,10 @@ def estimate_device(device: str, cfg: Config | None = None,
     canon = parsed.canonical
 
     signals = list(signals_for(canon, expand_signals(ai, load_news_cache())))
+
+    # Busca web ao vivo para ESTE device, com palavra-chave de data na query
+    # ("release date" & cia.) — e o que separa a data real do resto do ruido.
+    signals = _web_signals(ai, device, cfg) + signals
 
     # Evidencia forte: esta a venda em marketplace -> ja lancado
     try:
