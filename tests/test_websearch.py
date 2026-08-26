@@ -1,8 +1,19 @@
 import unittest
+from unittest import mock
 
+from mithrandir.collectors import websearch
 from mithrandir.collectors.websearch import (LAUNCH_KEYWORDS, build_queries,
                                              enrich_query, queries_for,
                                              search_all)
+
+RSS = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>Samsung Galaxy S26 FE Release Date Set for Next Week - Tech Advisor</title>
+<link>https://exemplo/1</link><pubDate>Fri, 21 Aug 2026 09:30:00 GMT</pubDate>
+<source url="https://tech">Tech Advisor</source>
+<description>&lt;a href="x"&gt;evento&lt;/a&gt; em 27 de agosto</description></item>
+<item><title>Sem data aqui - Blog</title><link>https://exemplo/2</link>
+<pubDate>data invalida</pubDate><description>nada</description></item>
+</channel></rss>"""
 
 
 class TestQueryBuilder(unittest.TestCase):
@@ -52,6 +63,48 @@ class TestQueryBuilder(unittest.TestCase):
         self.assertEqual(len(chamadas), 3)          # roda as 3 consultas
         self.assertEqual(len(out), 1)               # mesma URL nas duas que deram certo
         self.assertIn("query", out[0])              # guarda de qual consulta veio
+
+
+class TestGoogleNewsProvider(unittest.TestCase):
+    """O provedor real (RSS do Google Noticias) — sem tocar a rede."""
+
+    def setUp(self):
+        websearch.clear_search_cache()
+
+    def test_nenhuma_consulta_usa_aspas(self):
+        # Medido: frase exata derruba o recall do Google Noticias a quase zero.
+        for q in build_queries("Samsung Galaxy S26 FE"):
+            self.assertNotIn('"', q)
+        self.assertNotIn('"', enrich_query("Galaxy A57 lancamento"))
+
+    def test_consulta_em_ingles_vai_para_o_indice_americano(self):
+        self.assertEqual(websearch._locale_for("Galaxy S26 FE release date")["gl"], "US")
+        self.assertEqual(websearch._locale_for("Galaxy S26 FE data de lancamento Brasil")["gl"], "BR")
+
+    def test_le_titulo_veiculo_e_data_de_publicacao(self):
+        with mock.patch.object(websearch, "request_text", return_value=RSS) as req:
+            out = websearch.google_news_search("Galaxy S26 FE release date")
+            url = req.call_args[0][0]
+        self.assertIn("hl=en-US", url)                     # consulta EN -> Google US
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["published"], "2026-08-21")
+        self.assertEqual(out[0]["source"], "Tech Advisor")
+        self.assertNotIn("<a href", out[0]["snippet"])     # HTML da description sai
+        self.assertEqual(out[1]["published"], "")          # pubDate invalido nao quebra
+
+    def test_cache_evita_repetir_a_mesma_consulta(self):
+        with mock.patch.object(websearch, "request_text", return_value=RSS) as req:
+            websearch.google_news_search("Galaxy S26 FE release date")
+            websearch.google_news_search("Galaxy S26 FE release date")
+            self.assertEqual(req.call_count, 1)
+            websearch.clear_search_cache()
+            websearch.google_news_search("Galaxy S26 FE release date")
+            self.assertEqual(req.call_count, 2)
+
+    def test_flag_desliga_a_busca(self):
+        with mock.patch.object(websearch, "_get_setting", return_value="off"):
+            self.assertIsNone(websearch.get_search_provider())
+        self.assertIsNotNone(websearch.get_search_provider())
 
 
 if __name__ == "__main__":

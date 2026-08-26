@@ -18,7 +18,7 @@ de capinhas na Gocase. Python (biblioteca padrão + `requests` na nuvem). Roda
 | Calendário de lançamentos | ✅ base curada (`news_seed.json`) + IA + intel |
 | Intel manual (overrides) | ✅ real (Supabase/arquivo) |
 | Tração de marketplace (Mercado Livre etc.) | ⚠️ **mock** (falta token da API) |
-| Agente de notícias (busca web) | ⚠️ desligado (falta API de busca; ver §7) |
+| Agente de notícias (busca web) | ✅ real (Google Notícias RSS, sem chave); ver §7.2 |
 | Deploy | ✅ Vercel + Supabase |
 
 ---
@@ -28,9 +28,9 @@ de capinhas na Gocase. Python (biblioteca padrão + `requests` na nuvem). Roda
 ```powershell
 python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
-python -m mithrandir agent        # roda o agente de notícias (no-op sem API de busca)
+python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (28)
+python -m unittest discover -s tests   # testes (43)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -85,6 +85,7 @@ base curada / intel ─────┘                                          
 | `SUPABASE_URL` | URL do projeto Supabase |
 | `SUPABASE_SERVICE_KEY` | **service_role** (bypassa RLS; secreta) |
 | `MITHRANDIR_SHEETS_API_KEY` | Google Sheets API key (planilha compartilhada por link) |
+| `MITHRANDIR_WEBSEARCH` | `off` desliga a busca web (default: ligada) |
 
 `sheets_id` e `sheets_gid` já têm default no código (planilha atual); sobrescreva
 com `MITHRANDIR_SHEETS_ID` / `MITHRANDIR_SHEETS_GID` se trocar de planilha.
@@ -109,14 +110,16 @@ por cima). SQL em `specs/` / histórico do chat.
 |-------|--------|-------|
 | **Vendas internas** (planilha) | `collectors/sheets.py` → `internal_bi.py` | ✅ com API key; extrai o modelo após o último ` / `, soma por modelo, gera total + série mensal |
 | **Proxy de IA** | `ai/proxy.py` | ✅ (formato OpenAI) |
-| **Calendário / notícias** | `collectors/websearch.py` (`news_seed.json`) | ✅ base curada; agente de busca web = pendente |
+| **Calendário / notícias** | `collectors/websearch.py` | ✅ busca web (Google Notícias RSS) + base curada (`news_seed.json`) como fallback |
 | **Intel do analista** | `overrides.py` + `intel_parser.py` | ✅ |
 | **Marketplace** | `collectors/mercadolivre.py` + `mock_seed.py` | ⚠️ mock (falta token ML) |
 | **Previsão sazonal** | `collectors/launch_calendar.py` | ✅ (histórico em `data/sample/`) |
 
 `internal_bi` prioriza os dados da planilha (via `store`) e cai no CSV de exemplo
 quando não houver. O calendário prioriza busca web real e cai na base curada
-(`news_seed.json`) — o "modo conhecimento" do agente foi desligado (§7).
+(`news_seed.json`) quando a busca não render — o "modo conhecimento" do agente
+(pedir a data ao próprio modelo) segue desligado: o `gpt-5.5` não conhece datas
+novas e só degradava os dados.
 
 ---
 
@@ -148,7 +151,7 @@ data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (28)
+tests/                   # unittest (43)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -161,17 +164,20 @@ Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,ne
 1. **Marketplace ainda mock.** Ligar a **API do Mercado Livre** (token grátis) em
    `collectors/mercadolivre.py` — vira a maior fonte real de tração. Amazon/Magalu
    não têm API pública gratuita (ver spec 03).
-2. **Agente de notícias desligado.** O `gpt-5.5` não conhece datas de 2026 (corte de
-   treino), então o "modo conhecimento" só degradava os dados. Falta uma **API de
-   busca web**: plugar em `collectors/websearch.py::get_search_provider` (hoje `None`);
-   feito isso, o agente volta a atualizar sozinho e sobrepõe a base curada.
-   O **critério de busca já está pronto**: `queries_for(device)` monta 3 consultas
-   por aparelho, todas com palavra-chave de data (`"release date"`, `data de
-   lançamento Brasil`, `lançamento Brasil preço disponibilidade`) e `search_all`
-   junta/deduplica os resultados. O provedor só precisa receber a query e devolver
-   `[{title,url,snippet}]` — não monta critério nenhum. Vale tanto para o agente
-   (`news_agent`) quanto para a pesquisa sob demanda do app
-   (`launch_estimator.estimate_device` → `_web_signals`).
+2. **Busca web: rate limit do Google.** O agente agora busca de verdade
+   (`get_search_provider` → Google Notícias RSS, sem chave). Duas regras que vieram
+   de medição, não de intuição: **sem aspas** na query (frase exata derrubou o
+   resultado de 100 para 3 itens) e **consulta em inglês vai para o índice
+   americano** (`hl=en-US`), que é onde a data oficial aparece cravada.
+   O ponto fraco é o **429 (Too Many Requests)**: varrer a watchlist inteira dispara
+   dezenas de buscas do mesmo IP. Mitigado com passo mínimo entre chamadas
+   (`_MIN_INTERVAL`), 1 retentativa e `BULK_QUERIES=2` (a pesquisa de um device só
+   usa as 3), mas ainda cai parte da watchlist em rodadas ruins. Falha é **segura**:
+   o device mantém o sinal anterior (a base curada), e como cada rodada parte do
+   cache anterior, a cobertura acumula entre execuções. Uma API de busca paga
+   (Brave/Serper) resolveria — é só trocar o retorno de `get_search_provider`.
+   Desligar: `MITHRANDIR_WEBSEARCH=off`.
+   ⚠️ A rodada do agente leva ~45s, perto do `maxDuration: 60` do Vercel.
 3. **Timeline de vendas.** A tabela `daily_ranking` existe mas ainda não é populada;
    quando o marketplace for real, gravar o top-N diário para a curva "bombou no
    lançamento vs engrenou depois".

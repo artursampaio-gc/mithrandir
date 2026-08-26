@@ -42,6 +42,14 @@ def _get(key: str, default=None):
     return _JSON.get(key, default)
 
 
+def get_setting(key: str, default=None):
+    """Le uma chave avulsa de config (env MITHRANDIR_<KEY> > config.json > default).
+
+    Para flags que nao merecem um campo no `Config` (ex.: ligar/desligar a busca web).
+    """
+    return _get(key, default)
+
+
 @dataclass
 class AIConfig:
     """Proxy interno de GPT da empresa (compativel com API OpenAI).

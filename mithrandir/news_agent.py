@@ -18,13 +18,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .ai.proxy import AIClient
-from .collectors.websearch import (NEWS_CACHE_PATH, get_search_provider,
-                                   load_news_cache_raw, queries_for,
-                                   save_news_cache, search_all)
+from .collectors.websearch import (BULK_QUERIES, NEWS_CACHE_PATH,
+                                   get_search_provider, load_news_cache_raw,
+                                   queries_for, save_news_cache, search_all)
 from .config import DATA_DIR, load_config
 from .normalize import canonicalize
 
 WATCHLIST_PATH = DATA_DIR / "watchlist.json"
+
+# Distingue "nao passei search_fn" (usa o provedor) de "passei None" (sem busca).
+_AUTO = object()
+
+_AI_TIMEOUT = 35   # s por device (o Vercel corta a funcao inteira em 60s)
 
 # Sem "query" fixa: quem monta o criterio de busca e `queries_for`, que sempre
 # injeta as palavras-chave de data ("release date", "data de lancamento").
@@ -118,22 +123,31 @@ def load_watchlist(path: Path = WATCHLIST_PATH) -> list[dict]:
 
 def _signals_from_search(ai: AIClient, device: str, results: list[dict]) -> list[dict]:
     evidence = "\n".join(
-        f"- {r.get('title','')} ({r.get('url','')}): {r.get('snippet','')}" for r in results
+        f"- [publicado em {r.get('published') or '?'}] {r.get('title','')} "
+        f"({r.get('url','')}): {r.get('snippet','')}" for r in results
     ) or "(sem resultados)"
     prompt = (
         f"Resultados de busca sobre o lancamento do {device}:\n" + evidence + "\n\n"
-        "Extraia ate 3 sinais objetivos sobre a data de lancamento NO BRASIL.\n"
+        "Extraia ate 4 sinais objetivos sobre a data de lancamento.\n"
         "Regras:\n"
         "1) Prefira resultados com DATA explicita (dia/mes/ano ou mes/ano); descarte "
         "review, preco e ficha tecnica sem data.\n"
         "2) Copie a data como ela aparece no resultado — nao arredonde nem deduza "
-        "pela geracao anterior.\n"
-        "3) Se a data for do lancamento GLOBAL (e nao do Brasil), diga isso na frase.\n"
-        "4) Se nenhum resultado trouxer data, devolva uma lista vazia.\n"
+        "pela geracao anterior. Complete o ano pela data de publicacao da noticia.\n"
+        "3) Diga SEMPRE de que data se trata, com estas palavras:\n"
+        "   - 'anuncio oficial' = evento/apresentacao (ex.: 'Galaxy Event em 27/08');\n"
+        "   - 'disponibilidade no Brasil' = quando chega as lojas brasileiras.\n"
+        "   Sao coisas diferentes e as duas interessam — nao troque uma pela outra.\n"
+        "4) Noticia mais RECENTE (veja a data de publicacao) vence rumor antigo; se "
+        "houver confirmacao oficial, marque com 'confirmado'.\n"
+        "5) Se nenhum resultado trouxer data, devolva uma lista vazia.\n"
         "Responda SOMENTE JSON: "
         '{"signals":[{"source":"veiculo","text":"frase com a data/situacao","url":"link"}]}'
     )
-    return ai.complete_json(prompt, system="Voce coleta sinais de lancamento de smartphones.").get("signals", [])
+    # timeout curto: a rodada inteira do agente tem que caber nos 60s do Vercel,
+    # e um device lento nao pode derrubar a gravacao dos outros (o save e no fim)
+    return ai.complete_json(prompt, timeout=_AI_TIMEOUT,
+                            system="Voce coleta sinais de lancamento de smartphones.").get("signals", [])
 
 
 def _signals_from_knowledge(ai: AIClient, device: str) -> list[dict]:
@@ -150,7 +164,8 @@ def _collect_for(ai: AIClient, item: dict, search_fn) -> list[dict]:
     try:
         if search_fn:
             # varias consultas por device, todas com palavra-chave de data
-            results = search_all(search_fn, queries_for(item["device"], item.get("query", "")))
+            results = search_all(search_fn, queries_for(
+                item["device"], item.get("query", ""), limit=BULK_QUERIES))
             return _signals_from_search(ai, item["device"], results)
         return _signals_from_knowledge(ai, item["device"])
     except Exception as e:
@@ -158,15 +173,20 @@ def _collect_for(ai: AIClient, item: dict, search_fn) -> list[dict]:
         return []
 
 
-def refresh_news_cache(ai: AIClient | None = None, search_fn=None,
+def refresh_news_cache(ai: AIClient | None = None, search_fn=_AUTO,
                        watchlist: list[dict] | None = None,
                        path: Path = NEWS_CACHE_PATH) -> list[str]:
-    """Atualiza o news_cache para toda a watchlist. Retorna os devices atualizados."""
+    """Atualiza o news_cache para toda a watchlist. Retorna os devices atualizados.
+
+    `search_fn` omitido = usa o provedor configurado; `search_fn=None` = sem busca
+    (o agente vira no-op). Sao situacoes diferentes, por isso o sentinela.
+    """
     cfg = load_config()
     ai = ai or AIClient(cfg.ai)
     if not ai.available:
         raise RuntimeError("Proxy de IA nao configurado — o agente precisa do proxy.")
-    search_fn = search_fn if search_fn is not None else get_search_provider(cfg)
+    if search_fn is _AUTO:
+        search_fn = get_search_provider(cfg)
     if search_fn is None:
         # Sem API de busca web, o modo-conhecimento nao conhece datas novas e so
         # degradaria a base curada. Nao faz nada ate uma busca real ser ligada.
@@ -174,8 +194,10 @@ def refresh_news_cache(ai: AIClient | None = None, search_fn=None,
         return []
     watchlist = watchlist or load_watchlist()
 
-    # Chamadas em paralelo (o proxy e lento)
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    # Chamadas em paralelo. Cada device custa ~25s (3 buscas + 1 chamada ao proxy,
+    # que e a parte lenta), e o Vercel corta em 60s: com 6 workers a watchlist de
+    # 16 daria 3 rodadas e estouraria. Uma rodada so, todos de uma vez.
+    with ThreadPoolExecutor(max_workers=max(1, min(16, len(watchlist)))) as ex:
         results = list(ex.map(lambda it: (it, _collect_for(ai, it, search_fn)), watchlist))
 
     raw = load_news_cache_raw(path)

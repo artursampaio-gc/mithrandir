@@ -15,6 +15,19 @@ except Exception:  # pragma: no cover
     _requests = None
 
 
+def request_text(url: str, headers: dict | None = None, timeout: int = 30) -> str:
+    """GET simples que devolve o corpo como texto (RSS/HTML, nao JSON)."""
+    headers = dict(headers or {})
+    if _requests is not None:
+        resp = _requests.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.text
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        charset = r.headers.get_content_charset() or "utf-8"
+        return r.read().decode(charset, errors="replace")
+
+
 def request_json(method: str, url: str, headers: dict | None = None,
                  json_body=None, timeout: int = 30):
     """Faz a requisicao e retorna o JSON (ou None se corpo vazio)."""

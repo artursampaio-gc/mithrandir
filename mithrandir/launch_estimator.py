@@ -20,9 +20,9 @@ from typing import Optional
 
 from .ai.proxy import AIClient
 from .collectors.launch_calendar import load_launch_history, predict_upcoming
-from .collectors.websearch import (get_search_provider, known_devices,
-                                   load_news_cache, queries_for, search_all,
-                                   signals_for)
+from .collectors.websearch import (clear_search_cache, get_search_provider,
+                                   known_devices, load_news_cache, queries_for,
+                                   search_all, signals_for)
 from .config import Config, load_config
 from .news_miner import clear_cache as clear_mine_cache
 from .news_miner import expand_signals
@@ -37,6 +37,7 @@ _AI_CACHE: dict = {}
 def clear_ai_cache() -> None:
     _AI_CACHE.clear()
     clear_mine_cache()
+    clear_search_cache()   # "Recalcular" tem que buscar noticia nova, nao repetir a velha
 
 
 MONTHS = {
@@ -139,7 +140,13 @@ def _ai_estimate(ai: AIClient, device: str, brand: str, family: str,
         f"Baseline sazonal (mesmo mes do ano anterior): {seasonal_iso or 'nenhum'}.\n"
         f"Noticias coletadas:\n{evidence}\n\n"
         "Estime a data de lancamento NO BRASIL seguindo estas regras:\n"
-        "1) Baseie-se nas noticias acima.\n"
+        "1) Baseie-se nas noticias acima. Noticia que CRAVA uma data (anuncio "
+        "oficial, evento marcado, homologacao) vence baseline sazonal e rumor: "
+        "nao volte para o 'mes de costume' quando ha data concreta.\n"
+        "1b) Se as noticias trazem a data do ANUNCIO/evento (dia certo) e a "
+        "disponibilidade no Brasil ainda nao tem data, use a data do anuncio, com "
+        "precisao de dia, e explique na justificativa que e a data do anuncio e que "
+        "a chegada as lojas costuma vir algumas semanas depois.\n"
         "2) Nunca use status 'lancado' sem uma noticia confirmando o lancamento no Brasil.\n"
         "3) Se as noticias disserem que NAO ha data/confirmacao para o Brasil, "
         "retorne date=null e status='incerto'.\n"
