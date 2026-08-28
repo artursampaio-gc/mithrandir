@@ -17,7 +17,7 @@ de capinhas na Gocase. Python (biblioteca padrão + `requests` na nuvem). Roda
 | Vendas internas (Google Sheets) | ✅ real **quando a API key estiver setada**; senão CSV de exemplo |
 | Calendário de lançamentos | ✅ base curada (`news_seed.json`) + IA + intel |
 | Intel manual (overrides) | ✅ real (Supabase/arquivo) |
-| Tração de marketplace (Mercado Livre etc.) | ⚠️ **mock** (falta token da API) |
+| Tração de marketplace | ✅ **real** (Amazon BR via Sorftime/MCP, ingestão semanal); Mercado Livre segue mock |
 | Agente de notícias (busca web) | ✅ real (Google Notícias RSS, sem chave); ver §7.2 |
 | Deploy | ✅ Vercel + Supabase |
 
@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (43)
+python -m unittest discover -s tests   # testes (56)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -86,6 +86,7 @@ base curada / intel ─────┘                                          
 | `SUPABASE_SERVICE_KEY` | **service_role** (bypassa RLS; secreta) |
 | `MITHRANDIR_SHEETS_API_KEY` | Google Sheets API key (planilha compartilhada por link) |
 | `MITHRANDIR_WEBSEARCH` | `off` desliga a busca web (default: ligada) |
+| `MITHRANDIR_INGEST_TOKEN` | **obrigatória** para a ingestão de marketplace (secreta; sem ela o endpoint recusa) |
 
 `sheets_id` e `sheets_gid` já têm default no código (planilha atual); sobrescreva
 com `MITHRANDIR_SHEETS_ID` / `MITHRANDIR_SHEETS_GID` se trocar de planilha.
@@ -112,7 +113,7 @@ por cima). SQL em `specs/` / histórico do chat.
 | **Proxy de IA** | `ai/proxy.py` | ✅ (formato OpenAI) |
 | **Calendário / notícias** | `collectors/websearch.py` | ✅ busca web (Google Notícias RSS) + base curada (`news_seed.json`) como fallback |
 | **Intel do analista** | `overrides.py` + `intel_parser.py` | ✅ |
-| **Marketplace** | `collectors/mercadolivre.py` + `mock_seed.py` | ⚠️ mock (falta token ML) |
+| **Marketplace** | `collectors/sorftime.py` (real) + `mercadolivre.py`/`mock_seed.py` (mock) | ✅ Amazon BR via Sorftime; ML ainda mock |
 | **Previsão sazonal** | `collectors/launch_calendar.py` | ✅ (histórico em `data/sample/`) |
 
 `internal_bi` prioriza os dados da planilha (via `store`) e cai no CSV de exemplo
@@ -146,12 +147,13 @@ mithrandir/
   intel_parser.py        # texto livre -> override (IA/regex)
   dashboard.py           # export estático (python -m mithrandir run)
   ai/proxy.py            # cliente do proxy de IA
-  collectors/            # sheets, mercadolivre, launch_calendar, news, websearch, mock_seed
+  collectors/            # sheets, sorftime, marketplace, mercadolivre, launch_calendar,
+                         # news, websearch, mock_seed
 data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (43)
+tests/                   # unittest (56)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -161,9 +163,10 @@ Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,ne
 
 ## 7. Limitações conhecidas / próximos passos
 
-1. **Marketplace ainda mock.** Ligar a **API do Mercado Livre** (token grátis) em
-   `collectors/mercadolivre.py` — vira a maior fonte real de tração. Amazon/Magalu
-   não têm API pública gratuita (ver spec 03).
+1. **Marketplace: Amazon real, ML ainda mock.** A tração real chega pelo Sorftime
+   (ver §8). Falta o **Mercado Livre** (token grátis) em `collectors/mercadolivre.py`;
+   enquanto isso ele devolve mock, que a ingestão da Amazon sobrescreve quando as
+   chaves coincidem.
 2. **Busca web: rate limit do Google.** O agente agora busca de verdade
    (`get_search_provider` → Google Notícias RSS, sem chave). Duas regras que vieram
    de medição, não de intuição: **sem aspas** na query (frase exata derrubou o
@@ -184,3 +187,52 @@ Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,ne
 4. **Loop de feedback (RF-08)** — registrar decisão + resultado real para recalibrar
    os pesos do score (`scoring.py::WEIGHTS`).
 5. **Custos por device** — hoje globais na aba Config; poderiam ser por modelo.
+
+---
+
+## 8. Ingestão de marketplace (Sorftime → app)
+
+O Sorftime **só é acessível via MCP**, dentro de uma sessão do Claude — o app no
+Vercel não consegue chamar a ferramenta. Por isso o desenho é *produtor externo →
+endpoint de ingestão*, e toda a transformação mora em código testado no repo
+(`collectors/sorftime.py`), não no prompt do agente.
+
+```
+tarefa agendada (seg, 08h)  ──MCP──>  Sorftime (Amazon BR, node 16243890011)
+        │
+        └── python -m mithrandir ingest coleta.json
+                    │  (token do config local, nunca no prompt)
+                    ▼
+        POST /api/marketplace/ingest  ──>  agrega por modelo  ──>  store
+                                                │
+                                    marketplace_snapshot (rankings da UI)
+                                    marketplace_observations (tração do pipeline)
+                                    marketplace_history (momentum semana a semana)
+```
+
+**Por que semanal:** a venda que o Sorftime devolve é estimativa **mensal**. Coleta
+diária mediria ruído; semanal ainda dá 4 pontos por mês para o momentum.
+
+**O que a agregação faz** (o ponto que importa): um modelo aparece em vários ASINs
+— o iPhone 16 tinha 7 na coleta de 2026-08-29. Venda e faturamento **somam**;
+avaliações usam o **maior** (na Amazon as variantes compartilham as reviews do ASIN
+pai, somar contaria duas vezes); preço/nota/título vêm do ASIN líder; `online_date`
+é a mais antiga (é quando o modelo apareceu na loja). 99 anúncios → 68 modelos.
+
+### Configuração necessária
+| Onde | O quê |
+|------|-------|
+| Vercel (env) | `MITHRANDIR_INGEST_TOKEN` — sem ela o endpoint responde 503 |
+| Máquina local (`config.json`) | `ingest_token` (o mesmo valor) e `app_url` (URL do app no Vercel) |
+
+### Armadilha registrada: `canonicalize` não é idempotente
+`canonicalize("APPLE 16 E")` devolve `"APPLE 16"` — o `"e"` solto é tratado como
+conector do português (`_CONECTOR` em `normalize.py`, que existe para limpar
+"Moto g86 5G **e** Câmera"). Consequência: recanonicalizar uma chave já canônica
+**funde o iPhone 16e no iPhone 16** e a tração de um sobrescreve a do outro — dois
+aparelhos distintos, capinhas distintas.
+
+Por isso o pipeline usa `o["canonical_model"]` quando a coleta traz a chave pronta,
+em vez de passar o título cru por `canonicalize` de novo. Há teste de regressão em
+`tests/test_sorftime.py::TestPipelineUsaAChaveDoColetor`. **Não** recanonicalize
+chaves de coleta.

@@ -71,6 +71,16 @@ def load_snapshot() -> dict:
     return store.get_cached("marketplace_snapshot") or {}
 
 
+def has_real_data() -> bool:
+    """True se ja houve alguma coleta real de marketplace (snapshot preenchido).
+
+    O `Config.mock_mode` so olha para o token do Mercado Livre; depois que a
+    ingestao do Sorftime entrou, o app pode ter dado real sem esse token — e
+    rotular isso como 'exemplo' faria o analista descartar numero bom.
+    """
+    return bool(load_snapshot())
+
+
 def save_snapshot(snap: dict) -> None:
     store.set_cached("marketplace_snapshot", snap)
     store.set_cached("marketplace_snapshot_at", date.today().isoformat())

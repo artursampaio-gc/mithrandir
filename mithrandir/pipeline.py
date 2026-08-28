@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from .ai.proxy import AIClient
 from .config import Config, load_config
-from .collectors import mercadolivre, news
+from .collectors import mercadolivre, news, sorftime
 from .collectors.marketplace import load_snapshot as load_mkt_snapshot
 from .collectors.marketplace import to_rankings
 from .collectors.launch_calendar import load_launch_history, predict_upcoming
@@ -69,9 +69,20 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
 
     # 2) Candidatos com tracao no marketplace (pos-lancamento)
     # Usa a normalizacao por regras (deterministica e consistente com BI/catalogo).
-    for o in mercadolivre.collect(cfg.mercadolivre):
-        parsed = canonicalize(o["raw_name"])
-        key = parsed.canonical
+    #
+    # A coleta real (Sorftime, via /api/marketplace/ingest) vem DEPOIS do mock de
+    # proposito: mesma chave = sobrescreve. Enquanto nao houver ingestao a lista
+    # e vazia e o comportamento e exatamente o de antes.
+    for o in list(mercadolivre.collect(cfg.mercadolivre)) + sorftime.load_observations():
+        # Quando a coleta ja traz a chave normalizada, ela MANDA — nao passa por
+        # canonicalize de novo. Dois motivos:
+        #  1) recanonicalizar o titulo cru gera lixo ("APPLE 17 -NEVOA"), porque o
+        #     titulo tem cor e ficha tecnica que o corte do coletor ja tirou;
+        #  2) canonicalize NAO e idempotente: "APPLE 16 E" -> "APPLE 16" (o "e"
+        #     solto e tratado como conector do portugues). Isso fundia o iPhone 16e
+        #     no iPhone 16 e a tracao de um sobrescrevia a do outro.
+        parsed = canonicalize(o.get("canonical_model") or o["raw_name"])
+        key = o.get("canonical_model") or parsed.canonical
         c = candidates.setdefault(key, Candidate(canonical_model=key))
         c.brand = c.brand or parsed.brand
         c.family = c.family or parsed.family

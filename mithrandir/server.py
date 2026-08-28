@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import json
 import threading
+from hmac import compare_digest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import store
 from .ai.proxy import AIClient
-from .config import ROOT, load_config
+from .collectors import sorftime
+from .collectors.marketplace import has_real_data
+from .config import ROOT, get_setting, load_config
 from .intel_parser import parse_intel
 from .launch_estimator import (apply_overrides_to, build_calendar, clear_ai_cache,
                                estimate_device)
@@ -84,7 +87,7 @@ def _state() -> dict:
     if cands is None and not store.is_supabase():
         return {"loading": True}
     return {
-        "mock_mode": _cfg.mock_mode,
+        "mock_mode": _cfg.mock_mode and not has_real_data(),
         "ai_available": _cfg.ai.is_configured,
         "candidates": cands or [],
         "calendar": store.get_cached("calendar") or [],
@@ -197,8 +200,40 @@ class Handler(BaseHTTPRequestHandler):
             self._remove_device(body)
         elif self.path in ("/api/cron", "/api/cron/scout"):
             self._run_cron()
+        elif self.path == "/api/marketplace/ingest":
+            self._ingest_marketplace(body)
         else:
             self._send(404, b"not found", "text/plain")
+
+    def _ingest_marketplace(self, body: dict) -> None:
+        """Recebe uma coleta de marketplace (Sorftime via MCP) e aplica.
+
+        Endpoint de ESCRITA aberto na internet: exige token. Sem token
+        configurado ele recusa — falhar fechado e melhor do que aceitar
+        qualquer POST que sobrescreva a tracao do app.
+        """
+        expected = str(get_setting("ingest_token", "") or "")
+        if not expected:
+            self._json({"ok": False, "error": "Ingestao desativada: "
+                        "configure MITHRANDIR_INGEST_TOKEN."}, 503)
+            return
+        sent = (self.headers.get("Authorization", "") or "").removeprefix("Bearer ").strip()
+        if not compare_digest(sent, expected):
+            self._json({"ok": False, "error": "Token invalido."}, 401)
+            return
+
+        products = body.get("products") or []
+        if not isinstance(products, list):
+            self._json({"ok": False, "error": "'products' deve ser uma lista."}, 400)
+            return
+        try:
+            result = sorftime.ingest(products, collected_at=body.get("collected_at"),
+                                     source=body.get("source") or sorftime.SOURCE)
+        except ValueError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+            return
+        _rebuild_candidates()   # tracao nova muda o ranking (rapido, sem IA)
+        self._json({"ok": True, "ingested": result, "state": _state()})
 
     def _search_device(self, body: dict) -> None:
         """Pesquisa sob demanda: apenas estima e devolve (nao adiciona)."""
@@ -286,7 +321,8 @@ def serve(host: str = "127.0.0.1", port: int = 8756) -> None:
     # Constroi os dados em background para a porta responder imediatamente
     threading.Thread(target=_rebuild_all, daemon=True).start()
     print(f"Mithrandir no ar em http://{host}:{port}  (Ctrl+C para parar)")
-    print(f"  scouting: {'MOCK' if _cfg.mock_mode else 'REAL'} | IA: {_cfg.ai.is_configured} "
+    _mock = _cfg.mock_mode and not has_real_data()
+    print(f"  scouting: {'MOCK' if _mock else 'REAL'} | IA: {_cfg.ai.is_configured} "
           f"({_cfg.ai.model if _cfg.ai.is_configured else '-'})")
     print("  (preparando dados... a primeira carga leva alguns segundos)")
     try:
