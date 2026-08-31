@@ -111,32 +111,59 @@ def watchlist_from_base(top_n: int = 16, recent_months: int = 3,
     return out
 
 
+def gocase_recent_models(months: int = 12, today=None) -> dict:
+    """Modelos para os quais a GOCASE passou a vender capinha no ultimo ano.
+
+    canonical -> unidades vendidas. Duas fontes, porque nenhuma sozinha cobre a
+    janela de 12 meses:
+
+    A) **estreia na nossa serie de vendas** (`cases_started_selling`): capinha que
+       comecou a vender dentro da janela da planilha. Preciso, mas a planilha so
+       guarda o ANO CORRENTE — hoje, ~6 meses;
+    B) **capinha nossa de aparelho recente**: temos o modelo na base E o aparelho
+       estreou na loja ha menos de `months` (`online_date` da coleta da Amazon).
+       Cobre o pedaco que (A) nao alcanca. E o caso do Galaxy A17: a capinha
+       saiu em 09/2025, fora da janela da planilha, mas o aparelho estreou nessa
+       data e nos temos capinha dele.
+
+    ⚠️ (B) e aproximacao: assume que a capinha saiu perto do lancamento do
+    aparelho. O jeito certo e uma data de lancamento de capinha vinda do
+    e-commerce — ver DEV.md §9.
+    """
+    from .collectors.sorftime import recent_launches
+    from .internal_bi import cases_started_selling, load_internal_records
+
+    nossos = {r["canonical_model"]: (r.get("units") or 0) for r in load_internal_records()}
+    saida = {c: nossos.get(c, 0) for c in cases_started_selling()}          # (A)
+    for o in recent_launches(months, today):                                # (B)
+        canon = o.get("canonical_model") or ""
+        if canon in nossos:
+            saida[canon] = nossos[canon]
+    return saida
+
+
 def watchlist_from_launches(months: int = 12, top_n: int = 12,
                             today=None) -> list[dict]:
-    """Sucessor de cada aparelho que ESTREOU nos ultimos N meses.
+    """Sucessor do aparelho de cada capinha que a Gocase lancou no ultimo ano.
 
-    Complementa `watchlist_from_base`, que ranqueia por VENDA nossa. Aqui o
-    criterio e outro e mais direto: lancou faz pouco tempo -> a proxima geracao
-    esta a caminho. Ex.: Galaxy A17 estreou em 09/2025, entao vigiamos o A18.
+    Ex.: lancamos capinha do Galaxy A17 -> vigiamos o A18. E o criterio que o
+    negocio pediu, e e diferente de `watchlist_from_base` (que ranqueia por
+    volume de venda, sem olhar quando a capinha entrou).
 
     Leva junto `predecessor` e `predecessor_date`: sem noticia de data, o
-    estimador usa a data do predecessor no ano seguinte (ver
+    estimador usa a data de lancamento do PREDECESSOR no ano seguinte (ver
     `launch_estimator.predecessor_baseline`).
 
-    Dentro da janela a ordem e por VENDA, nao por data. Ordenando por data, o
-    mais antigo da janela cai no corte — e era justamente o Galaxy A17, primeiro
-    em vendas na Amazon BR, que perdia a vaga para um lancamento irrelevante mais
-    recente.
+    A ordem e por VENDA da capinha: quando ha mais candidatos que vagas, vigiar
+    o sucessor do que mais vende rende mais.
     """
     from .collectors.launch_calendar import _next_gen_name
-    from .collectors.sorftime import recent_launches
     from .internal_bi import load_catalog
 
     conhecidos = load_catalog()
     saida, vistos = [], set()
-    for o in sorted(recent_launches(months, today),
-                    key=lambda o: -(o.get("sold_qty") or 0)):
-        canon = o.get("canonical_model") or ""
+    for canon, unidades in sorted(gocase_recent_models(months, today).items(),
+                                  key=lambda kv: -kv[1]):
         parsed = canonicalize(canon)
         if not parsed.generation or not parsed.brand:
             continue                      # sem geracao nao da para projetar sucessor
@@ -145,13 +172,13 @@ def watchlist_from_launches(months: int = 12, top_n: int = 12,
             continue
         chave = canonicalize(nxt).canonical
         if chave in vistos or chave in conhecidos:
-            continue                      # o "sucessor" ja existe na nossa base
+            continue                      # ja temos capinha do sucessor
         vistos.add(chave)
         saida.append({
             "device": nxt,
             "brand": parsed.brand,
             "predecessor": canon,
-            "predecessor_date": o["online_date"],
+            "predecessor_units": unidades,
         })
         if len(saida) >= top_n:
             break

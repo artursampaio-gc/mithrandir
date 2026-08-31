@@ -329,31 +329,43 @@ def predecessor_baseline(canonical: str, today: date | None = None) -> Optional[
 
     Se a data projetada ja passou, avanca de ano em ano ate cair no futuro: um
     predecessor de 2023 nao gera "previsao" para 2024.
+
+    Duas fontes para a data do predecessor, nessa ordem:
+      1. estreia do APARELHO na loja (`online_date` da Amazon) — precisao de dia;
+      2. mes em que a NOSSA capinha comecou a vender — precisao de mes. Cobre o
+         buraco do (1): 34 dos 99 anuncios da Amazon vem sem data, e sem essa
+         segunda fonte sucessores como o Galaxy A58 voltavam sem data nenhuma,
+         que e justamente o que a regra existe para evitar.
     """
     from .collectors.sorftime import load_observations
+    from .internal_bi import cases_started_selling
 
     today = today or date.today()
     parsed = canonicalize(canonical)
     if not parsed.generation:
         return None
-    anterior = re.sub(rf"(?<!\d){parsed.generation}(?!\d)",
-                      str(parsed.generation - 1), canonical, count=1)
-    alvo = canonicalize(anterior).canonical
-    for o in load_observations():
-        if o.get("canonical_model") != alvo or not o.get("online_date"):
-            continue
-        try:
-            base = date.fromisoformat(o["online_date"])
-        except ValueError:
-            return None
-        for ano in range(base.year + 1, today.year + 2):
-            try:
-                candidata = base.replace(year=ano)
-            except ValueError:              # 29/02 em ano nao bissexto
-                candidata = base.replace(year=ano, day=28)
-            if candidata >= today:
-                return candidata.isoformat()
+    # A chave ja vem canonica; trocar o numero mantem o formato. NAO passar por
+    # canonicalize de novo: "APPLE 17 E" viraria "APPLE 17" (o "e" solto e
+    # tratado como conector) e o predecessor do iPhone 18e nunca seria achado.
+    alvo = re.sub(rf"(?<!\d){parsed.generation}(?!\d)",
+                  str(parsed.generation - 1), canonical, count=1)
+
+    origem = next((o.get("online_date") for o in load_observations()
+                   if o.get("canonical_model") == alvo and o.get("online_date")), None)
+    origem = origem or cases_started_selling(today=today).get(alvo)
+    if not origem:
         return None
+    try:
+        base = date.fromisoformat(origem)
+    except ValueError:
+        return None
+    for ano in range(base.year + 1, today.year + 2):
+        try:
+            candidata = base.replace(year=ano)
+        except ValueError:                  # 29/02 em ano nao bissexto
+            candidata = base.replace(year=ano, day=28)
+        if candidata >= today:
+            return candidata.isoformat()
     return None
 
 

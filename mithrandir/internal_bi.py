@@ -111,6 +111,43 @@ def load_catalog(path: Optional[Path] = None,
     return catalog
 
 
+def cases_started_selling(min_units: int = 100, today=None) -> dict[str, str]:
+    """Capinhas que ESTREARAM na janela da serie: canonical -> "AAAA-MM-01".
+
+    Sinal: a serie mensal comeca em zero e depois engrena. A planilha nao tem
+    data de lancamento da capinha, entao esse "primeiro mes com venda" e o que
+    da para inferir.
+
+    Os dois filtros existem porque o primeiro mes com venda, sozinho, confunde
+    lancamento com cauda longa: o `APPLE 7/8 +` (aparelho de 2016) aparece como
+    [0,0,0,10,0,0] — 10 unidades avulsas, nao um lancamento. Exigimos volume
+    minimo E venda no ultimo mes, o que separa limpo os casos reais
+    (`SAMSUNG A57` = [0,0,21,548,1388,1273]) do ruido.
+
+    ⚠️ So enxerga a janela da serie (hoje 6 meses, e do ANO CORRENTE — a planilha
+    nao guarda o ano anterior). Capinha lancada antes disso nao aparece aqui.
+    """
+    from datetime import date as _date
+
+    from .collectors.sheets import _completed_months
+
+    today = today or _date.today()
+    out: dict[str, str] = {}
+    for canon, serie in load_monthly_sales().items():
+        if not serie or not any(serie):
+            continue
+        primeiro = next(i for i, v in enumerate(serie) if v > 0)
+        if primeiro == 0:
+            continue                      # ja vendia quando a janela comecou
+        if sum(serie) < min_units or serie[-1] <= 0:
+            continue                      # venda avulsa de modelo antigo
+        meses = _completed_months(today.month, len(serie))
+        if len(meses) != len(serie):
+            continue                      # serie fora de sincronia com o calendario
+        out[canon] = f"{today.year:04d}-{meses[primeiro]:02d}-01"
+    return out
+
+
 def _perf_score(rec: dict, all_units: list[int]) -> float:
     """Desempenho do similar em 0-100, pelo PERCENTIL de unidades no catalogo.
 

@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (94)
+python -m unittest discover -s tests   # testes (97)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -154,7 +154,7 @@ data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (94)
+tests/                   # unittest (97)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -303,18 +303,47 @@ máquina ligada nem de MCP.
 **A watchlist tem 3 fontes** (`news_agent.load_watchlist`), nesta prioridade:
 
 1. `data/watchlist.json` — o que o analista fixou;
-2. `watchlist_from_launches()` — **novo**: quem estreou na loja nos últimos 12
-   meses (`online_date` da coleta da Amazon) → projeta o sucessor;
+2. `watchlist_from_launches()` — **novo**: sucessor do aparelho de cada capinha
+   que a **Gocase** lançou no último ano;
 3. `watchlist_from_base()` — os que mais vendem capinha hoje.
 
-Dentro da janela de 12 meses a ordem é por **venda, não por data**. Ordenando por
-data, o mais antigo da janela caía no corte — e era justamente o **Galaxy A17**,
-1º em vendas na Amazon BR, perdendo a vaga para um lançamento recente irrelevante.
+Dentro da fonte 2 a ordem é por **unidades vendidas da capinha**: havendo mais
+candidatos que vagas, vigiar o sucessor do que mais vende rende mais.
 
-**O fallback de data** é `launch_estimator.predecessor_baseline()`: mesma data do
-predecessor, um ano depois. Se a data projetada já passou, avança de ano em ano
-até cair no futuro (um predecessor de 2023 não gera "previsão" para 2024). A
-estimativa sai com confiança baixa (~0,35) e a justificativa diz que é só
+### Como se descobre "capinha lançada no último ano"
+A planilha **não tem data de lançamento de capinha**, e as colunas de mês são só
+do **ano corrente** (`sheets._completed_months`) — hoje, 6 meses. Então são duas
+fontes somadas (`news_agent.gocase_recent_models`):
+
+**(A) `internal_bi.cases_started_selling()`** — a série mensal começa em zero e
+depois engrena. Preciso, mas só enxerga a janela da planilha. Os dois filtros
+(volume mínimo + venda no último mês) existem porque o "primeiro mês com venda"
+sozinho confunde lançamento com cauda longa: o `APPLE 7/8 +` (aparelho de 2016)
+aparece como `[0,0,0,10,0,0]` — 10 unidades avulsas. Separa limpo do caso real
+(`SAMSUNG A57` = `[0,0,21,548,1388,1273]`).
+
+**(B) capinha nossa de aparelho recente** — temos o modelo na base **e** o
+aparelho estreou na loja há menos de 12 meses (`online_date` da Amazon). Cobre o
+que (A) não alcança. É o caso do **Galaxy A17**: a capinha saiu em 09/2025, fora
+da janela da planilha.
+
+> ⚠️ **(B) é aproximação**: assume que a capinha saiu perto do lançamento do
+> aparelho. O jeito certo é uma data de lançamento de capinha vinda do
+> e-commerce (data de criação do produto). Enquanto não houver, a cobertura do
+> "último ano" é parcial.
+
+### O fallback de data
+`launch_estimator.predecessor_baseline()`: mesma data do predecessor, um ano
+depois; se já passou, avança até cair no futuro (um predecessor de 2023 não gera
+"previsão" para 2024). Duas fontes para a data do predecessor:
+
+1. estreia do **aparelho** na loja (`online_date`) — precisão de dia;
+2. mês em que a **nossa capinha** começou a vender — precisão de mês. Cobre o
+   buraco do (1): 34 dos 99 anúncios da Amazon vêm sem data, e sem isso
+   sucessores como o Galaxy A58 voltavam **sem data nenhuma** — justamente o que
+   a regra existe para evitar.
+
+A estimativa sai com confiança baixa (~0,35) e a justificativa diz que é só
 baseline — não se disfarça de notícia.
 
 ### ⚠️ Orçamento de tempo do cron
