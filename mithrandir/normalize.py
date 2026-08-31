@@ -24,6 +24,15 @@ BRANDS = {
     "realme": "REALME",
     "asus": "ASUS",
     "infinix": "INFINIX",
+    # Marcas que apareceram no top 100 da Amazon BR e nao estavam mapeadas: sem
+    # marca reconhecida o aparelho e descartado na ingestao e some do scouting.
+    "oppo": "OPPO",
+    "tcl": "TCL",
+    "honor": "HONOR",
+    "nokia": "NOKIA",
+    "zte": "ZTE",
+    "multilaser": "MULTILASER",
+    "philco": "PHILCO",
 }
 
 # Substituicoes que normalizam sinonimos de sufixos/linhas
@@ -55,7 +64,12 @@ _CONECTOR = r"de|com|para|e"
 _COR = (r"preto|preta|branco|branca|azul|verde|roxo|roxa|violeta|cinza|prata|"
         r"prateado|dourado|dourada|titanio|grafite|rosa|amarelo|vermelho|bege|"
         r"black|blue|white|purple|midnight|silver|gold|green|pink|"
-        r"intenso|escuro|claro|natural|deserto")
+        r"intenso|escuro|claro|natural|deserto|"
+        # Vistos em anuncios reais da Amazon BR — inclui espanhol e o typo do
+        # lojista: "POCO C85 4G Negro", "Note 14 Pro Coral Green", "Note 14
+        # Ocean Blue", "Redmi 15C Mint Green", "Moonlight Blue", "Pro Titanuim"
+        r"negro|negra|blanco|coral|ocean|mint|moonlight|lavanda|lavender|"
+        r"titanium|titanuim")
 _SPEC = r"ram|rom|boost|nfc|global|camera|cam|tela|memoria|polegadas|selfie|tripla"
 
 
@@ -75,6 +89,9 @@ def _clean(text: str) -> str:
     # Remove ruido comum de anuncios: armazenamento, rede, dual sim
     t = re.sub(r"\b\d{1,4}\s?(gb|tb)\b", " ", t)
     t = re.sub(r"\b[2345]g\b", " ", t)
+    # Armazenamento escrito so com "G" ("Note 15 4G 256G/8Gb Ram"): exige 2+
+    # digitos para nao comer a rede (4G/5G), tratada na linha acima.
+    t = re.sub(r"\b\d{2,4}\s?g\b", " ", t)
     t = re.sub(r"\bdual\b|\bsim\b|\bnfc\b", " ", t)
     t = re.sub(rf"\bip\d{{2}}\b|\b\d+\s?mp\b|\b\d+(\.\d+)?\"", " ", t)
     # Palavras de anuncio: categoria, conectores, cores e specs
@@ -86,7 +103,7 @@ def _clean(text: str) -> str:
     t = re.sub(r"(\d)([a-z])", r"\1 \2", t)
     # Pontuacao solta ("Galaxy S25." / "g86 - 256GB" -> "g86")
     t = re.sub(r"[.,;:]+(\s|$)", r"\1", t)
-    t = re.sub(r"[-–—]+(\s|$)", r"\1", t)   # "g06-" (sobra de "g06-128GB") -> "g06"
+    t = re.sub(r"[-–—/]+(\s|$)", r"\1", t)  # "g06-" (de "g06-128GB") e "256G/" -> limpa
     t = re.sub(r"\s+", " ", t)
     return t.strip()
 

@@ -152,3 +152,36 @@ class TestPipelineUsaAChaveDoColetor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFiltroDeNaoCelular(unittest.TestCase):
+    """A categoria da Amazon tem intruso; `product_category` do Sorftime nao ajuda."""
+
+    QUEST = {"asin": "B0X", "title": "Meta Quest 3S 128 GB - All-in-one headset",
+             "brand": "Meta Quest", "monthly_sales_volume": "166", "price": 2999.0}
+
+    def test_produto_sem_marca_conhecida_fica_de_fora(self):
+        fora = []
+        rows = sorftime.parse_products([self.QUEST] + RAW, fora)
+        self.assertEqual(len(fora), 1)
+        self.assertIn("Meta Quest", fora[0])
+        self.assertNotIn("META QUEST 3 S", {r["canonical_model"] for r in rows})
+
+    def test_descarte_e_reportado_e_nao_silencioso(self):
+        mem = {}
+        with mock.patch.object(store, "get_cached", mem.get), \
+             mock.patch.object(store, "set_cached", lambda k, v: mem.__setitem__(k, v)):
+            res = sorftime.ingest([self.QUEST] + RAW, collected_at="2026-08-29")
+        self.assertEqual(res["descartados"], 1)
+        self.assertTrue(res["descartados_exemplos"])
+
+    def test_marcas_de_celular_reais_nao_sao_descartadas(self):
+        # OPPO e TCL vieram no top 100 e caiam no filtro por nao estarem mapeadas.
+        reais = [{"asin": "1", "title": "Smartphone OPPO A5 256GB 6GB Ram", "brand": "OPPO",
+                  "monthly_sales_volume": "94"},
+                 {"asin": "2", "title": "Smartphone TCL 50 256GB 14GB RAM", "brand": "TCL",
+                  "monthly_sales_volume": "80"}]
+        fora = []
+        rows = sorftime.parse_products(reais, fora)
+        self.assertEqual(fora, [])
+        self.assertEqual(len(rows), 2)

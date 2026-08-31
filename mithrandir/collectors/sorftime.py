@@ -42,14 +42,28 @@ def _float(v):
         return None
 
 
-def parse_products(raw: list) -> list[dict]:
-    """Le as linhas cruas do Sorftime e devolve so o que o app usa."""
+def parse_products(raw: list, descartados: list | None = None) -> list[dict]:
+    """Le as linhas cruas do Sorftime e devolve so o que o app usa.
+
+    Descarta o que nao for celular de marca conhecida. A categoria "Celulares e
+    Smartphones" da Amazon BR tem intruso — o Meta Quest 3S (headset de VR) veio
+    no top 100 da coleta de 2026-08-29 — e `product_category` do Sorftime vem
+    vazio em 72 dos 99 anuncios, entao nao serve de filtro. A marca serve: sem
+    marca reconhecida o app nao consegue casar com o BI nem sugerir capinha.
+
+    O custo e uma marca nova (uma TCL da vida) sumir calada; por isso o que cai
+    volta em `descartados`, e o resumo da ingestao mostra a contagem.
+    """
     rows = []
     for i, p in enumerate(raw or []):
         if not isinstance(p, dict):
             continue
         title = str(p.get("title") or "").strip()
         if not title:
+            continue
+        if not canonicalize(title).brand:
+            if descartados is not None:
+                descartados.append(title)
             continue
         rows.append({
             "asin": str(p.get("asin") or "").strip(),
@@ -176,7 +190,8 @@ def ingest(raw_products: list, collected_at: str | None = None,
            source: str = SOURCE) -> dict:
     """Aplica uma coleta: agrega, grava snapshot, observacoes e historico."""
     collected_at = collected_at or date.today().isoformat()
-    rows = parse_products(raw_products)
+    descartados: list[str] = []
+    rows = parse_products(raw_products, descartados)
     if not rows:
         raise ValueError("coleta vazia: nenhum produto com titulo utilizavel.")
     agg = aggregate_by_model(rows)
@@ -200,7 +215,12 @@ def ingest(raw_products: list, collected_at: str | None = None,
                            "sales": a["sales"], "price": a["price"]} for a in agg]})
     store.set_cached(HISTORY_KEY, hist[-HISTORY_WEEKS:])
 
+    if descartados:
+        print(f"[sorftime] {len(descartados)} anuncio(s) sem marca conhecida, "
+              f"fora da ingestao: {'; '.join(t[:60] for t in descartados[:3])}")
     return {"collected_at": collected_at, "source": source,
             "products": len(rows), "models": len(agg),
             "top": [{"model": a["canonical_model"], "sales": a["sales"]} for a in agg[:5]],
-            "with_momentum": sum(1 for o in obs if "momentum" in o)}
+            "with_momentum": sum(1 for o in obs if "momentum" in o),
+            "descartados": len(descartados),
+            "descartados_exemplos": [t[:80] for t in descartados[:5]]}

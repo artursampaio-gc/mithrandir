@@ -78,16 +78,36 @@ def load_internal_records(path: Optional[Path] = None) -> list[dict]:
     return records
 
 
-def load_catalog(path: Optional[Path] = None) -> set[str]:
-    """Modelos para os quais a Gocase JA tem capinha (gera penalidade)."""
-    path = path or (SAMPLE_DIR / "catalog_sample.csv")
+def load_catalog(path: Optional[Path] = None,
+                 records: Optional[list[dict]] = None) -> set[str]:
+    """Modelos para os quais a Gocase JA tem capinha (gera penalidade).
+
+    Duas fontes, unidas:
+
+    1) **A base interna de vendas.** Se vendemos capinha do modelo, temos capinha
+       dele — e essa e a fonte que vale: 158 modelos reais da planilha contra as
+       4 linhas do CSV de exemplo. Enquanto so o CSV valia, a penalidade era
+       inerte e o app recomendava iPhone 16 (41 mil capinhas vendidas) como se
+       fosse novidade.
+    2) **O CSV de catalogo**, para o caso de uma capinha existir mas ainda nao ter
+       venda registrada (lancamento recente).
+
+    Passe `records` para reaproveitar a base ja carregada pelo chamador.
+    """
     catalog: set[str] = set()
-    if not path.exists():
-        return catalog
-    with path.open(encoding="utf-8", newline="") as f:
-        for row in csv.DictReader(f):
-            # Canonicaliza para casar com a chave dos candidatos
-            catalog.add(canonicalize(row["canonical_model"].strip()).canonical)
+
+    recs = load_internal_records() if records is None else records
+    for r in recs:
+        key = (r.get("canonical_model") or "").strip()
+        if key:
+            catalog.add(key)   # ja vem canonicalizado de load_internal_records
+
+    path = path or (SAMPLE_DIR / "catalog_sample.csv")
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                # Canonicaliza para casar com a chave dos candidatos
+                catalog.add(canonicalize(row["canonical_model"].strip()).canonical)
     return catalog
 
 

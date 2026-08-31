@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (56)
+python -m unittest discover -s tests   # testes (66)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -153,7 +153,7 @@ data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (56)
+tests/                   # unittest (66)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -236,3 +236,25 @@ Por isso o pipeline usa `o["canonical_model"]` quando a coleta traz a chave pron
 em vez de passar o título cru por `canonicalize` de novo. Há teste de regressão em
 `tests/test_sorftime.py::TestPipelineUsaAChaveDoColetor`. **Não** recanonicalize
 chaves de coleta.
+
+### "Já temos capinha" vem da base de vendas, não do CSV
+`load_catalog()` lia só `data/sample/catalog_sample.csv` — 4 linhas de exemplo.
+Resultado: a penalidade `already_have_case` (que em `scoring.py` também ordena:
+"já temos → não é candidato") **nunca disparava**, e o app recomendava iPhone 16
+(41 mil capinhas vendidas na Gocase) como novidade. Agora o catálogo é a união de:
+
+1. **a base interna de vendas** (158 modelos reais) — se vendemos capinha do
+   modelo, temos capinha dele;
+2. o CSV, para capinha que existe mas ainda não vendeu.
+
+### Filtro de não-celular na ingestão
+A categoria "Celulares e Smartphones" da Amazon traz intruso (o **Meta Quest 3S**
+veio no top 100) e o `product_category` do Sorftime vem **vazio em 72 dos 99**
+anúncios — não serve de filtro. O critério é a **marca reconhecida**
+(`normalize.BRANDS`): sem marca, o app não casa com o BI nem sugere capinha.
+
+⚠️ **O custo é uma marca nova sumir calada.** Aconteceu na primeira rodada: OPPO e
+TCL — celulares de verdade — foram descartados por não estarem no `BRANDS`. Foram
+adicionados (junto de Honor, Nokia, ZTE, Multilaser, Philco). Se um modelo
+relevante não aparecer no scouting, **o primeiro lugar a olhar é o `BRANDS`**; a
+contagem de descartados vem no retorno da ingestão e no log (`descartados`).

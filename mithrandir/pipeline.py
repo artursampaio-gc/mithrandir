@@ -47,7 +47,7 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
     cfg = cfg or load_config()
     ai = AIClient(cfg.ai)
     internal = load_internal_records()
-    catalog = load_catalog()
+    catalog = load_catalog(records=internal)   # reaproveita a base ja carregada
     st = load_settings()
     mkt_snapshot = load_mkt_snapshot()
 
