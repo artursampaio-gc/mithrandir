@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (66)
+python -m unittest discover -s tests   # testes (82)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -140,7 +140,8 @@ mithrandir/
   viability.py           # receita / breakeven
   launch_estimator.py    # calendário (intel > IA > heurística > sazonal) + apply_overrides_to
   internal_bi.py         # vendas internas (planilha/CSV) + similar + catálogo
-  normalize.py           # normalização de nome de modelo
+  normalize.py           # normalização de nome de modelo (regras)
+  normalize_ai.py        # limpeza de título de anúncio pela IA (com guard-rail)
   overrides.py           # intel (Supabase/arquivo)
   settings.py            # config (Supabase/arquivo)
   news_agent.py          # agente de notícias (watchlist)
@@ -153,7 +154,7 @@ data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (66)
+tests/                   # unittest (82)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -247,11 +248,39 @@ Resultado: a penalidade `already_have_case` (que em `scoring.py` também ordena:
    modelo, temos capinha dele;
 2. o CSV, para capinha que existe mas ainda não vendeu.
 
+### Limpeza de título pela IA (`normalize_ai.py`)
+As regras de `normalize.py` são enxuga-gelo: cada coleta traz cor/edição inédita
+("Awesome Lavender", "Pantone Greener Pastures", "Crystals by Swarovski") e cada
+uma vira um candidato duplicado com a venda fatiada. Medido em ruído inédito: a
+**regra errou 7 de 8, a IA acertou 8 de 8**.
+
+A IA **não** substitui as regras — elas são o piso. Ordem:
+
+1. a regra sempre roda;
+2. a IA só vence quando **não contradiz** a regra na **marca** (sempre) e na
+   **geração** (quando a regra achou uma). Se a regra não achou geração, o número
+   que a IA usou precisa aparecer no título — foi assim que `"Smartphone TCL
+   256GB ... mAh TCL 605"` (modelo no fim do título, regra devolvia só `TCL`)
+   passou a virar `TCL 605`;
+3. sem proxy, falha de rede ou JSON torto → tudo cai na regra e a ingestão segue.
+
+⚠️ A saída da IA passa por `_formatar` para respeitar o invariante da casa
+(**dígito nunca colado em letra**): a IA devolvia `XIAOMI 15C` onde o BI e a regra
+usam `XIAOMI 15 C`. Não dá para simplesmente passar a chave por `canonicalize` —
+ela não é idempotente e refaria a fusão do 16e no 16 (ver acima).
+
+Custo: ~20s na primeira coleta (3 lotes de 40 títulos, em paralelo — em série
+eram 53s, perto demais do teto de 60s do Vercel). O resultado é cacheado por
+título (`title_keys`), e como a coleta semanal repete quase tudo, da segunda
+rodada em diante são ~3s.
+
 ### Filtro de não-celular na ingestão
 A categoria "Celulares e Smartphones" da Amazon traz intruso (o **Meta Quest 3S**
 veio no top 100) e o `product_category` do Sorftime vem **vazio em 72 dos 99**
-anúncios — não serve de filtro. O critério é a **marca reconhecida**
-(`normalize.BRANDS`): sem marca, o app não casa com o BI nem sugere capinha.
+anúncios — não serve de filtro. Dois critérios, nesta ordem: a **IA** devolve chave vazia para o que não é
+celular — pega até o que a marca não pega, porque um `Galaxy Tab S10 FE` tem
+marca Samsung legítima e passaria batido. Sem IA, o piso é ter **marca
+reconhecida** (`normalize.BRANDS`).
 
 ⚠️ **O custo é uma marca nova sumir calada.** Aconteceu na primeira rodada: OPPO e
 TCL — celulares de verdade — foram descartados por não estarem no `BRANDS`. Foram

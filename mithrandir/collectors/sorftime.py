@@ -18,6 +18,7 @@ from datetime import date
 
 from .. import store
 from ..normalize import canonicalize
+from .marketplace import model_from_listing
 from . import marketplace
 
 SOURCE = "amazon"          # loja (uma das marketplace.SITES)
@@ -42,26 +43,35 @@ def _float(v):
         return None
 
 
-def parse_products(raw: list, descartados: list | None = None) -> list[dict]:
+def parse_products(raw: list, descartados: list | None = None,
+                   chaves: dict | None = None) -> list[dict]:
     """Le as linhas cruas do Sorftime e devolve so o que o app usa.
 
-    Descarta o que nao for celular de marca conhecida. A categoria "Celulares e
-    Smartphones" da Amazon BR tem intruso — o Meta Quest 3S (headset de VR) veio
-    no top 100 da coleta de 2026-08-29 — e `product_category` do Sorftime vem
-    vazio em 72 dos 99 anuncios, entao nao serve de filtro. A marca serve: sem
-    marca reconhecida o app nao consegue casar com o BI nem sugerir capinha.
+    Descarta o que nao for celular. A categoria "Celulares e Smartphones" da
+    Amazon BR tem intruso — Meta Quest 3S, fone, tablet — e o `product_category`
+    do Sorftime vem vazio em 72 dos 99 anuncios, entao nao serve de filtro.
+    Dois criterios, nesta ordem:
+
+    1. a IA (quando `chaves` vem preenchido) devolve chave vazia para o que nao
+       e celular. Pega ate o caso que a marca nao pega: um `Galaxy Tab S10 FE`
+       tem marca Samsung legitima e passaria batido;
+    2. sem IA, o piso e ter marca reconhecida (`normalize.BRANDS`).
 
     O custo e uma marca nova (uma TCL da vida) sumir calada; por isso o que cai
     volta em `descartados`, e o resumo da ingestao mostra a contagem.
     """
     rows = []
+    chaves = chaves or {}
     for i, p in enumerate(raw or []):
         if not isinstance(p, dict):
             continue
         title = str(p.get("title") or "").strip()
         if not title:
             continue
-        if not canonicalize(title).brand:
+        canon = chaves.get(title)
+        if canon is None:                      # IA nao opinou -> regra
+            canon = model_from_listing(title) if canonicalize(title).brand else ""
+        if not canon:
             if descartados is not None:
                 descartados.append(title)
             continue
@@ -76,7 +86,7 @@ def parse_products(raw: list, descartados: list | None = None) -> list[dict]:
             "rating": _float(p.get("star_rating")),
             "online_date": str(p.get("online_date") or "").strip() or None,
             "source_rank": i + 1,          # posicao como veio do Sorftime
-            "canonical_model": marketplace.model_from_listing(title),
+            "canonical_model": canon,
         })
     return rows
 
@@ -186,12 +196,39 @@ def momentum_from_sales(current: int, previous: int | None) -> float | None:
     return round(max(0.0, min(100.0, 50.0 + growth * 200.0)), 1)
 
 
+def _chaves_da_ia(raw_products: list, ai=None) -> dict:
+    """titulo -> chave limpa pela IA. Cacheado no store por titulo.
+
+    A coleta semanal repete quase todos os titulos, entao da segunda rodada em
+    diante isso e praticamente de graca. Qualquer falha volta {} e a ingestao
+    segue nas regras.
+    """
+    from ..normalize_ai import CACHE_KEY, clean_titles
+
+    try:
+        if ai is None:
+            from ..ai.proxy import AIClient
+            from ..config import load_config
+            ai = AIClient(load_config().ai)
+        if not getattr(ai, "available", False):
+            return {}
+        titulos = [str(p.get("title") or "").strip()
+                   for p in (raw_products or []) if isinstance(p, dict)]
+        cache = store.get_cached(CACHE_KEY) or {}
+        chaves = clean_titles(ai, [t for t in titulos if t], cache)
+        store.set_cached(CACHE_KEY, {**cache, **chaves})
+        return chaves
+    except Exception as e:
+        print(f"[sorftime] limpeza por IA indisponivel ({e}); seguindo nas regras.")
+        return {}
+
+
 def ingest(raw_products: list, collected_at: str | None = None,
-           source: str = SOURCE) -> dict:
+           source: str = SOURCE, ai=None) -> dict:
     """Aplica uma coleta: agrega, grava snapshot, observacoes e historico."""
     collected_at = collected_at or date.today().isoformat()
     descartados: list[str] = []
-    rows = parse_products(raw_products, descartados)
+    rows = parse_products(raw_products, descartados, _chaves_da_ia(raw_products, ai))
     if not rows:
         raise ValueError("coleta vazia: nenhum produto com titulo utilizavel.")
     agg = aggregate_by_model(rows)

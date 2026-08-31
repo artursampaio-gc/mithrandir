@@ -81,6 +81,10 @@ class TestIngest(unittest.TestCase):
             p = mock.patch.object(store, name, fn)
             p.start()
             self.addCleanup(p.stop)
+        # sem isto a ingestao instancia o proxy real e a suite vai para a rede
+        p = mock.patch.object(sorftime, "_chaves_da_ia", return_value={})
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_grava_snapshot_observacoes_e_historico(self):
         res = sorftime.ingest(RAW, collected_at="2026-08-29")
@@ -170,7 +174,8 @@ class TestFiltroDeNaoCelular(unittest.TestCase):
     def test_descarte_e_reportado_e_nao_silencioso(self):
         mem = {}
         with mock.patch.object(store, "get_cached", mem.get), \
-             mock.patch.object(store, "set_cached", lambda k, v: mem.__setitem__(k, v)):
+             mock.patch.object(store, "set_cached", lambda k, v: mem.__setitem__(k, v)), \
+             mock.patch.object(sorftime, "_chaves_da_ia", return_value={}):
             res = sorftime.ingest([self.QUEST] + RAW, collected_at="2026-08-29")
         self.assertEqual(res["descartados"], 1)
         self.assertTrue(res["descartados_exemplos"])
