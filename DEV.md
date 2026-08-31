@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (82)
+python -m unittest discover -s tests   # testes (94)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -154,7 +154,7 @@ data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (82)
+tests/                   # unittest (94)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -287,3 +287,51 @@ TCL — celulares de verdade — foram descartados por não estarem no `BRANDS`.
 adicionados (junto de Honor, Nokia, ZTE, Multilaser, Philco). Se um modelo
 relevante não aparecer no scouting, **o primeiro lugar a olhar é o `BRANDS`**; a
 contagem de descartados vem no retorno da ingestão e no log (`descartados`).
+
+---
+
+## 9. Sucessor de quem lançou no último ano (diário)
+
+Regra de negócio: *"lançou o Galaxy A17 ano passado → pesquise o A18; se não
+houver data esperada, use a data do A17 no ano seguinte."*
+
+**Não há tarefa agendada nova para isso.** O cron do Vercel (`0 8 * * *` →
+`/api/cron`) já roda o agente de notícias todo dia; o que mudou foi *o que* ele
+vigia. Rodar server-side é melhor que uma tarefa do Claude: não depende de
+máquina ligada nem de MCP.
+
+**A watchlist tem 3 fontes** (`news_agent.load_watchlist`), nesta prioridade:
+
+1. `data/watchlist.json` — o que o analista fixou;
+2. `watchlist_from_launches()` — **novo**: quem estreou na loja nos últimos 12
+   meses (`online_date` da coleta da Amazon) → projeta o sucessor;
+3. `watchlist_from_base()` — os que mais vendem capinha hoje.
+
+Dentro da janela de 12 meses a ordem é por **venda, não por data**. Ordenando por
+data, o mais antigo da janela caía no corte — e era justamente o **Galaxy A17**,
+1º em vendas na Amazon BR, perdendo a vaga para um lançamento recente irrelevante.
+
+**O fallback de data** é `launch_estimator.predecessor_baseline()`: mesma data do
+predecessor, um ano depois. Se a data projetada já passou, avança de ano em ano
+até cair no futuro (um predecessor de 2023 não gera "previsão" para 2024). A
+estimativa sai com confiança baixa (~0,35) e a justificativa diz que é só
+baseline — não se disfarça de notícia.
+
+### ⚠️ Orçamento de tempo do cron
+Medido: agente com 20 devices = ~50s, recálculo do calendário = 26,5s. Juntos
+estouravam os **60s** do Vercel — e o save é no fim, então a função era cortada
+**antes de gravar** e a rodada inteira se perdia.
+
+Duas travas: `MAX_WATCHLIST = 20` e `BUDGET_SECONDS = 22` (o `_AI_TIMEOUT` de cada
+device também é limitado pelo tempo restante, senão quem já está em voo estoura o
+orçamento assim mesmo).
+
+O custo é cobertura parcial por rodada (~5-8 dos 20 devices). Como cada rodada
+parte do cache anterior e o cron é **diário**, a watchlist inteira é coberta em
+poucos dias. Se o calendário crescer, é o `BUDGET_SECONDS` que tem que cair.
+
+### Armadilha: o Sorftime manda a string `"null"`
+Não nulo de JSON — **34 dos 99** anúncios da coleta real. Guardar isso cru envenena
+qualquer filtro por data, porque `"null" > "2025-08-31"` na comparação de string:
+aparelho **sem** data entrava como "lançado no último ano". Tratado em
+`sorftime._date()`, que só aceita ISO válido.

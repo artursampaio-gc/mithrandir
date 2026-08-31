@@ -43,6 +43,24 @@ def _float(v):
         return None
 
 
+def _date(v):
+    """Data ISO ou None.
+
+    O Sorftime manda a STRING "null" quando nao tem data (34 dos 99 anuncios da
+    coleta de 2026-08-29), nao nulo de JSON. Guardar isso cru envenena qualquer
+    filtro por data: "null" > "2025-08-31" na comparacao de string, entao um
+    aparelho sem data entrava como "lancado no ultimo ano".
+    """
+    s = str(v or "").strip()
+    if len(s) != 10 or s[4] != "-" or s[7] != "-":
+        return None
+    try:
+        date.fromisoformat(s)
+    except ValueError:
+        return None
+    return s
+
+
 def parse_products(raw: list, descartados: list | None = None,
                    chaves: dict | None = None) -> list[dict]:
     """Le as linhas cruas do Sorftime e devolve so o que o app usa.
@@ -84,7 +102,7 @@ def parse_products(raw: list, descartados: list | None = None,
             "price": _float(p.get("price")),
             "reviews": _int(p.get("review_count")),
             "rating": _float(p.get("star_rating")),
-            "online_date": str(p.get("online_date") or "").strip() or None,
+            "online_date": _date(p.get("online_date")),
             "source_rank": i + 1,          # posicao como veio do Sorftime
             "canonical_model": canon,
         })
@@ -167,6 +185,21 @@ def load_observations() -> list[dict]:
 
 def load_history() -> list[dict]:
     return store.get_cached(HISTORY_KEY) or []
+
+
+def recent_launches(months: int = 12, today: date | None = None) -> list[dict]:
+    """Modelos que ESTREARAM na loja nos ultimos N meses, do mais novo ao mais velho.
+
+    `online_date` (data em que o anuncio entrou na Amazon) e o unico sinal de
+    lancamento real que temos hoje: o `launch_calendar` roda sobre um historico
+    de exemplo com 4 linhas. Serve de base para vigiar o sucessor de cada um.
+    """
+    today = today or date.today()
+    total = today.year * 12 + (today.month - 1) - months
+    corte = date(total // 12, total % 12 + 1, 1).isoformat()
+    saida = [o for o in load_observations()
+             if o.get("online_date") and o["online_date"] >= corte]
+    return sorted(saida, key=lambda o: o["online_date"], reverse=True)
 
 
 def sales_by_model(entry: dict | None = None) -> dict:

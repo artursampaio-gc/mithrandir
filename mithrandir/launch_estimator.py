@@ -319,6 +319,44 @@ def build_calendar(cfg: Config | None = None, today: date | None = None,
     return [e.to_dict() for e in estimates]
 
 
+def predecessor_baseline(canonical: str, today: date | None = None) -> Optional[str]:
+    """Data provavel do sucessor: a MESMA data do predecessor, um ano depois.
+
+    Regra pedida pelo negocio: "se nao ha data esperada para o A18, use a data do
+    A17 no ano seguinte". O predecessor sai da estreia real na loja (`online_date`
+    da coleta da Amazon), que tem precisao de dia e cobre 60+ modelos — contra as
+    4 linhas do historico de exemplo.
+
+    Se a data projetada ja passou, avanca de ano em ano ate cair no futuro: um
+    predecessor de 2023 nao gera "previsao" para 2024.
+    """
+    from .collectors.sorftime import load_observations
+
+    today = today or date.today()
+    parsed = canonicalize(canonical)
+    if not parsed.generation:
+        return None
+    anterior = re.sub(rf"(?<!\d){parsed.generation}(?!\d)",
+                      str(parsed.generation - 1), canonical, count=1)
+    alvo = canonicalize(anterior).canonical
+    for o in load_observations():
+        if o.get("canonical_model") != alvo or not o.get("online_date"):
+            continue
+        try:
+            base = date.fromisoformat(o["online_date"])
+        except ValueError:
+            return None
+        for ano in range(base.year + 1, today.year + 2):
+            try:
+                candidata = base.replace(year=ano)
+            except ValueError:              # 29/02 em ano nao bissexto
+                candidata = base.replace(year=ano, day=28)
+            if candidata >= today:
+                return candidata.isoformat()
+        return None
+    return None
+
+
 def _web_signals(ai: AIClient, device: str, cfg: Config) -> list[dict]:
     """Sinais vindos de busca web ao vivo. Lista vazia se nao houver provedor."""
     search_fn = get_search_provider(cfg)
@@ -380,6 +418,9 @@ def estimate_device(device: str, cfg: Config | None = None,
                 except ValueError:
                     pass
                 break
+    # O historico e um arquivo de exemplo com 4 linhas; a estreia real na loja
+    # (Amazon) cobre muito mais e tem precisao de dia.
+    seasonal = seasonal or predecessor_baseline(canon)
 
     res = _ai_estimate(ai, device, parsed.brand, parsed.family, signals, seasonal, today) \
         if ai.available else None
