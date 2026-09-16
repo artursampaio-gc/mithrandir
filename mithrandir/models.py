@@ -26,7 +26,9 @@ class InternalPerformance:
     margin_pct: Optional[float] = None
     sell_through_pct: Optional[float] = None  # % do estoque vendido
     perf_score: float = 0.0        # 0-100, desempenho normalizado do similar
-    monthly_sales: list = field(default_factory=list)  # vendas dos ultimos 6 meses [int]
+    monthly_sales: list = field(default_factory=list)  # 6 meses de venda do similar
+    # True = a serie e a LARGADA (primeiros 6 meses da capinha); False = ultimos 6
+    monthly_from_launch: bool = False
 
 
 @dataclass

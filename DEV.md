@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (110)
+python -m unittest discover -s tests   # testes (119)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -148,13 +148,13 @@ mithrandir/
   intel_parser.py        # texto livre -> override (IA/regex)
   dashboard.py           # export estático (python -m mithrandir run)
   ai/proxy.py            # cliente do proxy de IA
-  collectors/            # sheets, sorftime, catalog, marketplace, mercadolivre,
-                         # launch_calendar, news, websearch, mock_seed
+  collectors/            # sheets, sorftime, catalog, case_sales, marketplace,
+                         # mercadolivre, launch_calendar, news, websearch, mock_seed
 data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (110)
+tests/                   # unittest (119)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -421,3 +421,41 @@ O guard-rail rejeita o que a regra não consegue ancorar: `IP 16 Pro Max`
 `iPhone X / Xs / 11Pro` (registro multi-aparelho) e `Morotola G10` (typo de
 cadastro no site). São perdas aceitáveis; a alternativa é aceitar chave sem
 âncora, que é como se inventa capinha que não existe.
+
+---
+
+## 11. Curva de largada da capinha (breakeven)
+
+O breakeven usava os **últimos 6 meses** de venda do similar. Está errado para o
+que ele decide: molde novo tem que ser comparado com a **largada** de um similar,
+não com a venda madura ou já em declínio dele.
+
+O iPhone 16 vendeu `[122, 659, 1412, 1183, 905, 703]` nos seis primeiros meses —
+sobe, pica no 3º mês e começa a cair. A média dos últimos seis meses dele hoje diz
+outra coisa: subestima o pico e superestima a cauda.
+
+### De onde vem
+`site.consolidated_line_items` com `material_category = 'case'` — **4,5M linhas
+desde 2022-08**. O `material` é `<tipo>-<slug do aparelho>`
+(`infiniteair-iphone14promax`), então o slug sai do fim e casa com `spree_devices`
+por `replace(slug,'-','')` (os slugs de venda não têm hífen). O nome do aparelho
+vem daí e passa pela mesma normalização do catálogo.
+
+⚠️ **O histórico começa em 2022-08**, então para capinha lançada antes disso o
+"primeiro mês com venda" seria só o início da janela, não a largada real. A
+consulta corta em `2022-10` — modelo antigo fica de fora em vez de entrar com
+número errado. Hoje são **59 modelos** com curva.
+
+### Duas armadilhas
+**Um mesmo aparelho vem em vários SKUs** (o iPhone 15 Pro Max tem duas linhas).
+Quando o mês inicial bate, as séries **somam**; quando não bate, fica a de maior
+volume — somar séries desalinhadas no tempo inventaria uma curva que não existiu.
+
+**O join duplicava**: dois registros de `spree_devices` colapsam no mesmo slug
+quando se removem os hífens, e o `array_agg` vinha com 12 valores em vez de 6.
+Resolvido com `DISTINCT ON` no lado do device.
+
+### Fallback
+Sem a curva ingerida, `find_similar` cai nos últimos 6 meses (o comportamento
+anterior). `InternalPerformance.monthly_from_launch` diz qual das duas está em uso
+— importante, porque as duas séries têm 6 números e significados opostos.

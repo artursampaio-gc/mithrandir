@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import store
 from .ai.proxy import AIClient
-from .collectors import catalog, sorftime
+from .collectors import case_sales, catalog, sorftime
 from .collectors.marketplace import has_real_data
 from .config import ROOT, get_setting, load_config
 from .intel_parser import parse_intel
@@ -204,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
             self._ingest_marketplace(body)
         elif self.path == "/api/catalog/ingest":
             self._ingest_catalog(body)
+        elif self.path == "/api/case-sales/ingest":
+            self._ingest_case_sales(body)
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -221,6 +223,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(e)}, 400)
             return
         _rebuild_candidates()   # "ja temos capinha" muda o ranking (rapido, sem IA)
+        self._json({"ok": True, "ingested": result})
+
+    def _ingest_case_sales(self, body: dict) -> None:
+        """Recebe a curva de largada das capinhas (primeiros 6 meses por modelo)."""
+        if not self._autorizado():
+            return
+        rows = body.get("sales") or []
+        if not isinstance(rows, list):
+            self._json({"ok": False, "error": "'sales' deve ser uma lista."}, 400)
+            return
+        try:
+            result = case_sales.ingest(rows)
+        except ValueError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+            return
+        _rebuild_candidates()   # a serie muda o breakeven, que e a ordenacao
         self._json({"ok": True, "ingested": result})
 
     def _autorizado(self) -> bool:

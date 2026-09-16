@@ -206,7 +206,16 @@ def find_similar(parsed: ParsedModel, records: list[dict]) -> Optional[InternalP
         # cai para a geracao mais recente disponivel na familia
         match = max(pool, key=lambda r: (r["generation"], r["units"]))
 
-    monthly = load_monthly_sales().get(match["canonical_model"], [])
+    # Serie que alimenta o breakeven: a LARGADA do similar (primeiros 6 meses da
+    # capinha dele), nao os ultimos 6 meses. Projetar molde novo em cima da venda
+    # madura de um modelo antigo subestima o pico e superestima a cauda. Sem a
+    # curva de largada ingerida, cai nos ultimos 6 meses, que e o que havia antes.
+    from .collectors.case_sales import series_for
+
+    monthly = series_for(match["canonical_model"])
+    de_largada = bool(monthly)
+    if not monthly:
+        monthly = load_monthly_sales().get(match["canonical_model"], [])
     return InternalPerformance(
         similar_model=match["canonical_model"],
         units=match["units"],
@@ -215,4 +224,5 @@ def find_similar(parsed: ParsedModel, records: list[dict]) -> Optional[InternalP
         sell_through_pct=match["sell_through_pct"],
         perf_score=_perf_score(match, all_units),
         monthly_sales=monthly,
+        monthly_from_launch=de_largada,
     )

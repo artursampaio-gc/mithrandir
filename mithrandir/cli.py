@@ -193,9 +193,57 @@ def cmd_ingest_catalog(args):
     print(f"Catalogo enviado para {url}: {total} modelos com capinha.")
 
 
+def cmd_ingest_case_sales(args):
+    """Envia a curva de largada das capinhas (primeiros 6 meses por modelo).
+
+        python -m mithrandir ingest-case-sales vendas.json [--url URL] [--dry-run]
+    """
+    import json
+    from pathlib import Path
+
+    from ._http import request_json
+    from .config import get_setting
+
+    paths = [a for a in args if not a.startswith("--")]
+    if not paths:
+        print("Uso: python -m mithrandir ingest-case-sales <arquivo.json> [--dry-run]")
+        return
+    raw = json.loads(Path(paths[0]).read_text(encoding="utf-8"))
+    if isinstance(raw, dict):            # aceita a resposta crua do runQuery
+        raw = raw.get("rows", raw)
+    if not isinstance(raw, list):
+        print("Arquivo invalido: esperava uma lista.")
+        return
+
+    if "--dry-run" in args:
+        from .collectors.case_sales import parse_rows
+        fora = []
+        d = parse_rows(raw, descartados=fora)
+        print(f"{len(raw)} registros -> {len(d)} modelos ({len(fora)} fora)")
+        for k, v in sorted(d.items(), key=lambda kv: -sum(kv[1]["serie"]))[:8]:
+            print(f"  {k:24} desde {v['m0'][:7]}  {v['serie']}")
+        return
+
+    url = (args[args.index("--url") + 1] if "--url" in args else None) \
+        or str(get_setting("app_url", "http://127.0.0.1:8756") or "")
+    token = str(get_setting("ingest_token", "") or "")
+    if not token:
+        print("Sem token: configure MITHRANDIR_INGEST_TOKEN.")
+        return
+    res = request_json("POST", url.rstrip("/") + "/api/case-sales/ingest",
+                       headers={"Authorization": f"Bearer {token}"},
+                       json_body={"sales": raw}, timeout=180)
+    ing = (res or {}).get("ingested") or {}
+    print(f"Enviado para {url}: {ing.get('recebidos')} registros -> "
+          f"{ing.get('modelos')} modelos com curva de largada.")
+    for t in ing.get("top", []):
+        print(f"  {t['modelo']:24} {t['total6']:>6} un nos 6 primeiros meses")
+
+
 COMMANDS = {"run": cmd_run, "top": cmd_top, "info": cmd_info,
             "serve": cmd_serve, "agent": cmd_agent, "ingest": cmd_ingest,
-            "ingest-catalog": cmd_ingest_catalog}
+            "ingest-catalog": cmd_ingest_catalog,
+            "ingest-case-sales": cmd_ingest_case_sales}
 
 
 def main(argv=None):

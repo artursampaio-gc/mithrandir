@@ -33,6 +33,19 @@ BRANDS = {
     "zte": "ZTE",
     "multilaser": "MULTILASER",
     "philco": "PHILCO",
+    # Marcas com capinha no catalogo do site que a regra nao reconhecia — sem
+    # elas, o piso sem IA descarta o aparelho e ele some do catalogo, o que faz o
+    # app recomendar capinha que ja existe.
+    "huawei": "HUAWEI",
+    "google": "GOOGLE",
+    "pixel": "GOOGLE",
+    "oneplus": "ONEPLUS",
+    "one plus": "ONEPLUS",
+    "lg": "LG",
+    "sony": "SONY",
+    "lenovo": "LENOVO",
+    "jovi": "JOVI",
+    "vivo": "JOVI",
 }
 
 # Substituicoes que normalizam sinonimos de sufixos/linhas
