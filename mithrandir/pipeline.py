@@ -114,10 +114,16 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
         c.internal = find_similar(parsed, internal)
         c.already_have_case = key in catalog
         if c.internal and c.internal.monthly_sales:
+            # Com a curva de largada, os rotulos tem que contar do mes em que a
+            # capinha do similar saiu — nao dos ultimos meses do calendario.
+            desde = None
+            if c.internal.monthly_from_launch:
+                from .collectors.case_sales import load_first_months
+                desde = (load_first_months().get(c.internal.similar_model) or {}).get("m0")
             c.viability = compute_viability(
                 c.internal.monthly_sales,
                 case_price=st["case_price"], mold_cost=st["mold_cost"],
-                unit_cost=st["unit_cost"])
+                unit_cost=st["unit_cost"], desde=desde)
 
     ranked = rank_by_breakeven(list(candidates.values()))
     try:

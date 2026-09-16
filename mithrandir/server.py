@@ -936,7 +936,7 @@ function openReport(c){
         <tr class="sp hl"><td>Breakeven</td><td class="num">${v.breakeven_weeks} sem.</td></tr>
         <tr><td>Qtd p/ Breakeven</td><td class="num">${v.qtd_breakeven} cases</td></tr>
       </tbody></table></div>`;
-    col2=`<div class="rcol"><div class="rsec">Vendas (6 meses)</div>${salesChart(v.months)}
+    col2=`<div class="rcol"><div class="rsec">${c.internal&&c.internal.monthly_from_launch?'Vendas nos 6 primeiros meses da capinha':'Vendas (últimos 6 meses)'}</div>${salesChart(v.months)}
       <div class="rsec">Custo × Vendas (breakeven)</div>
       <div class="legend2"><span><i style="background:#94a3b8"></i>Custo total (molde + capinhas)</span><span><i style="background:var(--gold-d)"></i>Receita (vendas)</span></div>
       ${breakevenChart(v)}</div>`;

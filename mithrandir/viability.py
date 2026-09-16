@@ -21,8 +21,25 @@ MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
          "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 
 
-def month_labels(n: int = 6, today: date | None = None) -> list[str]:
-    """Nomes dos ultimos n meses completos (anteriores ao mes atual)."""
+def month_labels(n: int = 6, today: date | None = None,
+                 desde: str | None = None) -> list[str]:
+    """Nomes dos meses da serie.
+
+    Com `desde` ("AAAA-MM-..."), conta A PARTIR daquele mes — e o caso da curva de
+    largada, cujos 6 numeros sao os primeiros meses da capinha, nao os ultimos do
+    calendario. Sem `desde`, mantem o comportamento antigo (ultimos n meses).
+
+    Sem isso a serie de largada do iPhone 16 (set/2024 em diante) aparecia rotulada
+    com os meses correntes — numero certo, mes errado.
+    """
+    if desde:
+        try:
+            ano, mes = int(desde[:4]), int(desde[5:7])
+        except (ValueError, IndexError):
+            desde = None
+        else:
+            base = ano * 12 + (mes - 1)
+            return [f"{MESES[(base + k) % 12]}/{(base + k) // 12}" for k in range(n)]
     today = today or date.today()
     base = today.year * 12 + (today.month - 1)
     return [MESES[(base - k) % 12] for k in range(n, 0, -1)]
@@ -39,12 +56,12 @@ def _mom(units: list[int]) -> list:
 
 def compute_viability(monthly_units: list[int], today: date | None = None,
                       case_price: float = CASE_PRICE, mold_cost: float = MOLD_COST,
-                      unit_cost: float = UNIT_COST) -> dict:
+                      unit_cost: float = UNIT_COST, desde: str | None = None) -> dict:
     """Retorna o dicionario de viabilidade (vazio se nao houver vendas)."""
     if not monthly_units:
         return {}
     n = len(monthly_units)
-    labels = month_labels(n, today)
+    labels = month_labels(n, today, desde)
     total = sum(monthly_units)
     avg_month = total / n
     avg_week = avg_month / WEEKS_PER_MONTH
