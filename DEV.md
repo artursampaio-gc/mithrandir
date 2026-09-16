@@ -30,7 +30,7 @@ python -m mithrandir serve        # app web em http://127.0.0.1:8756
 python -m mithrandir run          # pipeline -> gera output/dashboard.html (estático)
 python -m mithrandir agent        # roda o agente de notícias (busca web real)
 python -m mithrandir info         # mostra config/modo atual
-python -m unittest discover -s tests   # testes (97)
+python -m unittest discover -s tests   # testes (110)
 ```
 
 Local sem credenciais = tudo em **arquivos** (`data/`) e dados de **exemplo**.
@@ -86,7 +86,7 @@ base curada / intel ─────┘                                          
 | `SUPABASE_SERVICE_KEY` | **service_role** (bypassa RLS; secreta) |
 | `MITHRANDIR_SHEETS_API_KEY` | Google Sheets API key (planilha compartilhada por link) |
 | `MITHRANDIR_WEBSEARCH` | `off` desliga a busca web (default: ligada) |
-| `MITHRANDIR_INGEST_TOKEN` | **obrigatória** para a ingestão de marketplace (secreta; sem ela o endpoint recusa) |
+| `MITHRANDIR_INGEST_TOKEN` | **obrigatória** para as ingestões (marketplace e catálogo); sem ela os endpoints recusam |
 
 `sheets_id` e `sheets_gid` já têm default no código (planilha atual); sobrescreva
 com `MITHRANDIR_SHEETS_ID` / `MITHRANDIR_SHEETS_GID` se trocar de planilha.
@@ -148,13 +148,13 @@ mithrandir/
   intel_parser.py        # texto livre -> override (IA/regex)
   dashboard.py           # export estático (python -m mithrandir run)
   ai/proxy.py            # cliente do proxy de IA
-  collectors/            # sheets, sorftime, marketplace, mercadolivre, launch_calendar,
-                         # news, websearch, mock_seed
+  collectors/            # sheets, sorftime, catalog, marketplace, mercadolivre,
+                         # launch_calendar, news, websearch, mock_seed
 data/
   news_seed.json         # base curada de lançamentos (real, versionada)
   watchlist.json         # devices que o agente vigia
   sample/                # exemplos (CSV BI, catálogo, histórico, vendas mensais)
-tests/                   # unittest (97)
+tests/                   # unittest (110)
 ```
 
 Estado local (gitignored): `config.json`, `data/{overrides,settings,app_cache,news_cache}.json`,
@@ -364,3 +364,60 @@ Não nulo de JSON — **34 dos 99** anúncios da coleta real. Guardar isso cru e
 qualquer filtro por data, porque `"null" > "2025-08-31"` na comparação de string:
 aparelho **sem** data entrava como "lançado no último ano". Tratado em
 `sorftime._date()`, que só aceita ISO válido.
+
+---
+
+## 10. Catálogo de capinhas (fonte da verdade do "já temos?")
+
+`site.spree_devices` — o catálogo do e-commerce. **735 registros**, com `name`,
+`brand` e `created_at` (o dia em que o aparelho entrou no site = quando a capinha
+saiu). Normalizado, vira **430 modelos** canônicos.
+
+Isso substitui duas gambiarras que erravam feio:
+
+| Pergunta | Antes | Agora |
+|---|---|---|
+| "já temos capinha do X?" | CSV de exemplo (4 linhas) + inferência pela planilha | catálogo real |
+| "capinhas do último ano?" | série de 6 meses + proxy pela data na Amazon | `created_at` exato |
+
+**O tamanho do erro que isso corrigiu** — os candidatos do topo do app, todos já
+nossos: `APPLE 16 E` (#1, capinha desde **25/02/2025**), `SAMSUNG S26 FE`
+(marcado "pré-lançamento", capinha desde 26/08/2026), `XIAOMI NOTE 15 / 15 PRO /
+POCO X8 PRO` (desde 20/05/2026), `APPLE 18` e família (desde 09/09/2026).
+
+### Como roda
+Mesmo desenho do Sorftime — o app no Vercel não chama MCP:
+
+```
+consulta ao site (MCP/proxy)  →  arquivo JSON
+        └── python -m mithrandir ingest-catalog devices.json
+                    │  PAGINADO em 150 registros
+                    ▼
+        POST /api/catalog/ingest  →  normaliza  →  store["gocase_catalog"]
+```
+
+⚠️ **A paginação não é enfeite**: normalizar os 735 de uma vez levou **110s**,
+contra os 60s do Vercel. Cada página cabe (~25s); o cache de títulos faz as
+rodadas seguintes saírem quase de graça. `reset:true` só na primeira página.
+
+### Duas armadilhas que custaram caro
+**1. O prompt da IA tinha de ser o oposto do de marketplace.** No anúncio da
+Amazon, "capa" é ruído → descarta. No catálogo do site **toda linha é uma
+capinha**, e o que se quer é o aparelho dela. Com a regra do anúncio, as entradas
+`Case Infinite Xiaomi Redmi Note 15 Pro 5G` voltavam **vazias** — justamente os
+lançamentos novos — e o app concluía que não tínhamos a capinha que temos. Daí
+`DESCARTE_ANUNCIO` × `DESCARTE_CATALOGO`, e **caches separados**
+(`title_keys` × `catalog_title_keys`): a mesma string tem resposta diferente nos
+dois contextos.
+
+**2. "Case Infinite" vazava para a chave** quando a IA não estava disponível
+(`XIAOMI CASE INFINITE NOTE 15 PRO`). Entrou em `normalize._CATEGORIA`. Chave
+errada no catálogo = achamos que não temos a capinha que temos, que é o pior
+erro possível aqui.
+
+### O que sobrou de fora
+O guard-rail rejeita o que a regra não consegue ancorar: `IP 16 Pro Max`
+(abreviação — mas o "iPhone 16 Pro Max" próprio está no catálogo),
+`iPhone X / Xs / 11Pro` (registro multi-aparelho) e `Morotola G10` (typo de
+cadastro no site). São perdas aceitáveis; a alternativa é aceitar chave sem
+âncora, que é como se inventa capinha que não existe.

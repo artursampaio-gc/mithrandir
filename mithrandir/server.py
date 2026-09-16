@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import store
 from .ai.proxy import AIClient
-from .collectors import sorftime
+from .collectors import catalog, sorftime
 from .collectors.marketplace import has_real_data
 from .config import ROOT, get_setting, load_config
 from .intel_parser import parse_intel
@@ -202,8 +202,39 @@ class Handler(BaseHTTPRequestHandler):
             self._run_cron()
         elif self.path == "/api/marketplace/ingest":
             self._ingest_marketplace(body)
+        elif self.path == "/api/catalog/ingest":
+            self._ingest_catalog(body)
         else:
             self._send(404, b"not found", "text/plain")
+
+    def _ingest_catalog(self, body: dict) -> None:
+        """Recebe uma pagina do catalogo de capinhas (spree_devices do site)."""
+        if not self._autorizado():
+            return
+        devices = body.get("devices") or []
+        if not isinstance(devices, list):
+            self._json({"ok": False, "error": "'devices' deve ser uma lista."}, 400)
+            return
+        try:
+            result = catalog.ingest(devices, reset=bool(body.get("reset")))
+        except ValueError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+            return
+        _rebuild_candidates()   # "ja temos capinha" muda o ranking (rapido, sem IA)
+        self._json({"ok": True, "ingested": result})
+
+    def _autorizado(self) -> bool:
+        """Token dos endpoints de escrita. Responde o erro e devolve False."""
+        expected = str(get_setting("ingest_token", "") or "")
+        if not expected:
+            self._json({"ok": False, "error": "Ingestao desativada: "
+                        "configure MITHRANDIR_INGEST_TOKEN."}, 503)
+            return False
+        sent = (self.headers.get("Authorization", "") or "").removeprefix("Bearer ").strip()
+        if not compare_digest(sent, expected):
+            self._json({"ok": False, "error": "Token invalido."}, 401)
+            return False
+        return True
 
     def _ingest_marketplace(self, body: dict) -> None:
         """Recebe uma coleta de marketplace (Sorftime via MCP) e aplica.
@@ -212,16 +243,8 @@ class Handler(BaseHTTPRequestHandler):
         configurado ele recusa — falhar fechado e melhor do que aceitar
         qualquer POST que sobrescreva a tracao do app.
         """
-        expected = str(get_setting("ingest_token", "") or "")
-        if not expected:
-            self._json({"ok": False, "error": "Ingestao desativada: "
-                        "configure MITHRANDIR_INGEST_TOKEN."}, 503)
+        if not self._autorizado():
             return
-        sent = (self.headers.get("Authorization", "") or "").removeprefix("Bearer ").strip()
-        if not compare_digest(sent, expected):
-            self._json({"ok": False, "error": "Token invalido."}, 401)
-            return
-
         products = body.get("products") or []
         if not isinstance(products, list):
             self._json({"ok": False, "error": "'products' deve ser uma lista."}, 400)

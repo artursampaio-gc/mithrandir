@@ -59,7 +59,11 @@ def _unglue_brand(text: str) -> str:
 
 
 # Ruido tipico de titulo de anuncio de marketplace
-_CATEGORIA = r"smartphone|celular|aparelho|telefone"
+# "Case Infinite"/"Case Infinite Air" sao TIPOS de capinha no catalogo do site,
+# nao parte do nome do aparelho: sem tirar, "Case Infinite Xiaomi Redmi Note 15
+# Pro 5G" vira a chave XIAOMI CASE INFINITE NOTE 15 PRO e o app conclui que NAO
+# temos a capinha que temos.
+_CATEGORIA = r"smartphone|celular|aparelho|telefone|case infinite air|case infinite"
 _CONECTOR = r"de|com|para|e"
 _COR = (r"preto|preta|branco|branca|azul|verde|roxo|roxa|violeta|cinza|prata|"
         r"prateado|dourado|dourada|titanio|grafite|rosa|amarelo|vermelho|bege|"

@@ -48,7 +48,9 @@ class AIClient:
                 "User-Agent": "Mithrandir/0.1",
             },
         )
-        return body["choices"][0]["message"]["content"].strip()
+        # content pode vir null (visto em lote grande): tratar como resposta vazia
+        # em vez de estourar AttributeError no meio de uma rodada de ingestao.
+        return (body["choices"][0]["message"].get("content") or "").strip()
 
     def complete_json(self, prompt: str, system: str = "", timeout: int = 60) -> dict:
         """Igual a complete, mas espera e faz parse de um JSON na resposta."""

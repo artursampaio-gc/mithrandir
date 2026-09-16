@@ -139,8 +139,63 @@ def cmd_ingest(args):
         print(f"  {t['model']:<24} {t['sales']:>6} un/mes")
 
 
+def cmd_ingest_catalog(args):
+    """Envia o catalogo de capinhas (spree_devices do site) para o app.
+
+        python -m mithrandir ingest-catalog devices.json [--url URL] [--dry-run]
+
+    Vai PAGINADO: normalizar os 735 registros de uma vez leva ~90s e o Vercel
+    corta em 60s. Cada pagina cabe; o cache de titulos faz as rodadas seguintes
+    saírem quase de graca.
+    """
+    import json
+    from pathlib import Path
+
+    from ._http import request_json
+    from .config import get_setting
+
+    paths = [a for a in args if not a.startswith("--")]
+    if not paths:
+        print("Uso: python -m mithrandir ingest-catalog <arquivo.json> [--url URL] [--dry-run]")
+        return
+    raw = json.loads(Path(paths[0]).read_text(encoding="utf-8"))
+    if isinstance(raw, dict):            # aceita a resposta crua do runQuery
+        raw = raw.get("rows", raw)
+    if not isinstance(raw, list):
+        print("Arquivo invalido: esperava uma lista de devices.")
+        return
+
+    if "--dry-run" in args:
+        from .collectors.catalog import parse_devices
+        fora = []
+        canon = parse_devices(raw, descartados=fora)
+        print(f"{len(raw)} registros -> {len(canon)} modelos ({len(fora)} nao sao celular)")
+        for c, d in sorted(canon.items(), key=lambda kv: kv[1], reverse=True)[:8]:
+            print(f"  {c:24} capinha desde {d}")
+        return
+
+    url = (args[args.index("--url") + 1] if "--url" in args else None) \
+        or str(get_setting("app_url", "http://127.0.0.1:8756") or "")
+    token = str(get_setting("ingest_token", "") or "")
+    if not token:
+        print("Sem token: configure MITHRANDIR_INGEST_TOKEN (ou ingest_token no config.json).")
+        return
+
+    alvo, pagina, total = url.rstrip("/") + "/api/catalog/ingest", 150, 0
+    for i in range(0, len(raw), pagina):
+        lote = raw[i:i + pagina]
+        res = request_json("POST", alvo, headers={"Authorization": f"Bearer {token}"},
+                           json_body={"devices": lote, "reset": i == 0}, timeout=180)
+        ing = (res or {}).get("ingested") or {}
+        total = ing.get("modelos_no_catalogo", total)
+        print(f"  pagina {i // pagina + 1}: {len(lote)} registros -> "
+              f"catalogo com {total} modelos")
+    print(f"Catalogo enviado para {url}: {total} modelos com capinha.")
+
+
 COMMANDS = {"run": cmd_run, "top": cmd_top, "info": cmd_info,
-            "serve": cmd_serve, "agent": cmd_agent, "ingest": cmd_ingest}
+            "serve": cmd_serve, "agent": cmd_agent, "ingest": cmd_ingest,
+            "ingest-catalog": cmd_ingest_catalog}
 
 
 def main(argv=None):

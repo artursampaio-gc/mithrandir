@@ -82,7 +82,13 @@ def load_catalog(path: Optional[Path] = None,
                  records: Optional[list[dict]] = None) -> set[str]:
     """Modelos para os quais a Gocase JA tem capinha (gera penalidade).
 
-    Duas fontes, unidas:
+    **Fonte principal: o catalogo real do site** (`spree_devices`, via
+    `collectors/catalog.py`). Quando ele existe, e ele que manda — 429 modelos
+    com data de lancamento da capinha, contra as fontes por inferencia abaixo.
+    Foi o que fez o app parar de recomendar o iPhone 16e, que tem capinha desde
+    25/02/2025, como candidato numero 1.
+
+    Sem ingestao do catalogo, cai nas duas fontes por inferencia:
 
     1) **A base interna de vendas.** Se vendemos capinha do modelo, temos capinha
        dele — e essa e a fonte que vale: 158 modelos reais da planilha contra as
@@ -94,6 +100,12 @@ def load_catalog(path: Optional[Path] = None,
 
     Passe `records` para reaproveitar a base ja carregada pelo chamador.
     """
+    from .collectors.catalog import load_catalog as _real
+
+    real = _real()
+    if real:
+        return set(real)
+
     catalog: set[str] = set()
 
     recs = load_internal_records() if records is None else records

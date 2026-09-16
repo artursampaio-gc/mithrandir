@@ -114,28 +114,35 @@ def watchlist_from_base(top_n: int = 16, recent_months: int = 3,
 def gocase_recent_models(months: int = 12, today=None) -> dict:
     """Modelos para os quais a GOCASE passou a vender capinha no ultimo ano.
 
-    canonical -> unidades vendidas. Duas fontes, porque nenhuma sozinha cobre a
-    janela de 12 meses:
+    canonical -> unidades vendidas.
 
-    A) **estreia na nossa serie de vendas** (`cases_started_selling`): capinha que
-       comecou a vender dentro da janela da planilha. Preciso, mas a planilha so
-       guarda o ANO CORRENTE — hoje, ~6 meses;
-    B) **capinha nossa de aparelho recente**: temos o modelo na base E o aparelho
-       estreou na loja ha menos de `months` (`online_date` da coleta da Amazon).
-       Cobre o pedaco que (A) nao alcanca. E o caso do Galaxy A17: a capinha
-       saiu em 09/2025, fora da janela da planilha, mas o aparelho estreou nessa
-       data e nos temos capinha dele.
+    **Com o catalogo do site ingerido, a data e exata**: `created_at` de
+    `spree_devices` e o dia em que o aparelho entrou no site, ou seja, quando a
+    capinha saiu. Sem ele, cai em duas inferencias, porque nenhuma sozinha cobre
+    12 meses:
 
-    ⚠️ (B) e aproximacao: assume que a capinha saiu perto do lancamento do
-    aparelho. O jeito certo e uma data de lancamento de capinha vinda do
-    e-commerce — ver DEV.md §9.
+    A) **estreia na nossa serie de vendas** (`cases_started_selling`): preciso,
+       mas a planilha so guarda o ANO CORRENTE — hoje, ~6 meses;
+    B) **capinha nossa de aparelho recente** (`online_date` da Amazon): cobre o
+       resto, mas assume que a capinha saiu perto do lancamento do aparelho.
     """
+    from datetime import date as _date
+
+    from .collectors.catalog import load_catalog as load_real_catalog
     from .collectors.sorftime import recent_launches
     from .internal_bi import cases_started_selling, load_internal_records
 
     nossos = {r["canonical_model"]: (r.get("units") or 0) for r in load_internal_records()}
-    saida = {c: nossos.get(c, 0) for c in cases_started_selling()}          # (A)
-    for o in recent_launches(months, today):                                # (B)
+
+    real = load_real_catalog()
+    if real:
+        hoje = today or _date.today()
+        total = hoje.year * 12 + (hoje.month - 1) - months
+        corte = _date(total // 12, total % 12 + 1, 1).isoformat()
+        return {c: nossos.get(c, 0) for c, d in real.items() if d >= corte}
+
+    saida = {c: nossos.get(c, 0) for c in cases_started_selling(today=today)}   # (A)
+    for o in recent_launches(months, today):                                   # (B)
         canon = o.get("canonical_model") or ""
         if canon in nossos:
             saida[canon] = nossos[canon]

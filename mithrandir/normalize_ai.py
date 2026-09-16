@@ -43,8 +43,7 @@ Regras:
 - NAO repita a sub-marca na chave: "Redmi Note 15" -> "XIAOMI NOTE 15".
 - MANTENHA o sufixo que distingue um APARELHO de outro, porque a capinha muda:
   PRO, PRO MAX, ULTRA, FE, MINI, E, e PLUS escrito como "+".
-- Se NAO for um celular (fone, tablet, smartwatch, headset, carregador, capa),
-  devolva chave vazia "".
+{regra_descarte}
 
 Exemplos do catalogo: APPLE 16, APPLE 16 PRO MAX, APPLE 12 MINI, SAMSUNG S24 ULTRA,
 SAMSUNG S23 +, SAMSUNG A55, MOTOROLA G84, XIAOMI NOTE 11, XIAOMI X6.
@@ -53,6 +52,21 @@ Titulos:
 {lista}
 
 Responda SOMENTE JSON: {{"itens":[{{"n":1,"chave":"..."}}]}}"""
+
+# Anuncio de marketplace: capa e acessorio no meio dos celulares, e ruido.
+DESCARTE_ANUNCIO = (
+    "- Se NAO for um celular (fone, tablet, smartwatch, headset, carregador, "
+    'capa), devolva chave vazia "".'
+)
+
+# Catalogo do site: TODA linha e uma capinha. O que se quer e o APARELHO dela —
+# usar a regra do anuncio aqui zerava justamente os lancamentos novos
+# ("Case Infinite Xiaomi Redmi Note 15 Pro 5G" voltava vazio, e o app concluia
+# que nao tinhamos a capinha que temos).
+DESCARTE_CATALOGO = """- Estes sao produtos de CAPINHA. Devolva o APARELHO a que a capinha serve,
+  ignorando o tipo/linha da capinha ("Case Infinite", "Case Infinite Air",
+  "Flip", "Pro Drop"). So devolva chave vazia "" quando nao houver aparelho
+  nenhum no nome (bolsa, garrafa, ecobag, cabo, pulseira, mala, waitlist)."""
 
 
 def _formatar(chave: str) -> str:
@@ -91,7 +105,8 @@ def _compativel(chave_ia: str, titulo: str) -> bool:
     return re.search(rf"\b{ia.generation}\b", titulo) is not None
 
 
-def clean_titles(ai, titles: list[str], cache: dict | None = None) -> dict:
+def clean_titles(ai, titles: list[str], cache: dict | None = None,
+                 descarte: str = DESCARTE_ANUNCIO) -> dict:
     """titulo -> chave canonica; "" marca 'nao e celular'.
 
     Titulos ja resolvidos antes vem do `cache` (a coleta semanal repete quase
@@ -107,7 +122,7 @@ def clean_titles(ai, titles: list[str], cache: dict | None = None) -> dict:
     # Em paralelo: em serie, 99 titulos levavam 53s e a ingestao inteira tem os
     # 60s do Vercel. Um lote que falha nao derruba os outros.
     with ThreadPoolExecutor(max_workers=min(4, len(lotes))) as ex:
-        for lote, itens in zip(lotes, ex.map(lambda l: _pedir_lote(ai, l), lotes)):
+        for lote, itens in zip(lotes, ex.map(lambda l: _pedir_lote(ai, l, descarte), lotes)):
             for item in itens:
                 try:
                     titulo = lote[int(item["n"]) - 1]
@@ -122,10 +137,11 @@ def clean_titles(ai, titles: list[str], cache: dict | None = None) -> dict:
     return out
 
 
-def _pedir_lote(ai, lote: list[str]) -> list[dict]:
+def _pedir_lote(ai, lote: list[str], descarte: str = DESCARTE_ANUNCIO) -> list[dict]:
     lista = "\n".join(f"{n}. {t}" for n, t in enumerate(lote, 1))
     try:
-        data = ai.complete_json(_PROMPT.format(lista=lista), system=_SYSTEM, timeout=90)
+        data = ai.complete_json(_PROMPT.format(lista=lista, regra_descarte=descarte),
+                                system=_SYSTEM, timeout=90)
         return data.get("itens") or []
     except Exception as e:
         print(f"[normalize_ai] lote falhou ({e}); usando as regras nele.")

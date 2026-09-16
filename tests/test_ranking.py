@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mithrandir.models import Candidate
 from mithrandir.scoring import rank_by_breakeven
@@ -59,4 +60,25 @@ class TestCatalogoUsaBaseInterna(unittest.TestCase):
 
     def test_base_vazia_nao_quebra(self):
         from mithrandir.internal_bi import load_catalog
-        self.assertEqual(load_catalog(path=Path("nao-existe.csv"), records=[]), set())
+        with mock.patch("mithrandir.collectors.catalog.load_catalog", return_value={}):
+            self.assertEqual(load_catalog(path=Path("nao-existe.csv"), records=[]), set())
+
+
+class TestCatalogoRealVence(unittest.TestCase):
+    """Com o catalogo do site ingerido, ele manda: as fontes por inferencia
+    erravam (o iPhone 16e era candidato #1 e tem capinha desde 25/02/2025)."""
+
+    def test_catalogo_do_site_substitui_a_inferencia(self):
+        from mithrandir.internal_bi import load_catalog
+        real = {"APPLE 16 E": "2025-02-25", "SAMSUNG S26 FE": "2026-08-26"}
+        with mock.patch("mithrandir.collectors.catalog.load_catalog", return_value=real):
+            cat = load_catalog(records=[{"canonical_model": "SO NA PLANILHA"}])
+        self.assertEqual(cat, {"APPLE 16 E", "SAMSUNG S26 FE"})
+        self.assertNotIn("SO NA PLANILHA", cat)   # a inferencia sai de cena
+
+    def test_sem_ingestao_cai_na_inferencia(self):
+        from mithrandir.internal_bi import load_catalog
+        with mock.patch("mithrandir.collectors.catalog.load_catalog", return_value={}):
+            cat = load_catalog(path=Path("nao-existe.csv"),
+                               records=[{"canonical_model": "APPLE 16"}])
+        self.assertEqual(cat, {"APPLE 16"})
