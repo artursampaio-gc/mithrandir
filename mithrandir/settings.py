@@ -23,9 +23,14 @@ DEFAULTS = {
     "scouting_time": "08:00",
     # Analise
     "history_months": 6,
+    # Preco minimo do APARELHO no marketplace para ele virar candidato.
+    # Celular de entrada tem comprador que nao compra capinha de ~R$100, entao
+    # abaixo disso o candidato so polui a lista. 0 desliga o filtro.
+    "min_device_price": 1200.0,
 }
 
-_NUMERIC = {"case_price", "mold_cost", "unit_cost", "history_months"}
+_NUMERIC = {"case_price", "mold_cost", "unit_cost", "history_months",
+            "min_device_price"}
 
 
 def _coerce(k, v):

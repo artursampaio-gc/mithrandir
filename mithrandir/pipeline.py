@@ -43,6 +43,24 @@ def _headline_matches(title: str, c: Candidate) -> bool:
     return brand_ok and gen_ok
 
 
+def _filtra_por_preco(cands: list[Candidate], minimo) -> list[Candidate]:
+    """Corta aparelho barato demais para justificar capinha.
+
+    So corta quem TEM preco conhecido: candidato pre-lancamento ainda nao esta a
+    venda em lugar nenhum, e e justamente o que mais interessa vigiar — derrubar
+    por falta de preco eliminaria o Galaxy S26 FE da vida.
+    """
+    try:
+        minimo = float(minimo or 0)
+    except (TypeError, ValueError):
+        return cands
+    if minimo <= 0:
+        return cands
+    return [c for c in cands
+            if not (c.marketplace and c.marketplace.price)
+            or c.marketplace.price >= minimo]
+
+
 def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
     cfg = cfg or load_config()
     ai = AIClient(cfg.ai)
@@ -125,7 +143,8 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
                 case_price=st["case_price"], mold_cost=st["mold_cost"],
                 unit_cost=st["unit_cost"], desde=desde)
 
-    ranked = rank_by_breakeven(list(candidates.values()))
+    ranked = rank_by_breakeven(_filtra_por_preco(list(candidates.values()),
+                                                 st.get("min_device_price")))
     try:
         save_run(ranked, cfg.mock_mode)  # historico local (ignorado em FS read-only)
     except Exception:

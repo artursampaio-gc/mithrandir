@@ -637,6 +637,8 @@ transform:translateX(100%);transition:.25s;z-index:11;overflow-y:auto;padding:22
       <div><label>Valor da capinha (R$)</label><input type="number" step="0.01" id="s-case"></div>
       <div><label>Custo do molde (R$)</label><input type="number" step="1" id="s-mold"></div>
       <div><label>Custo por unidade (R$)</label><input type="number" step="0.01" id="s-unit"></div>
+      <div><label>Preço mín. do aparelho (R$)</label><input type="number" step="50" id="s-minprice">
+        <small style="color:var(--muted)">Abaixo disso o aparelho não vira candidato. 0 desliga.</small></div>
     </div>
   </div>
   <div class="card">
@@ -696,6 +698,7 @@ function renderWatchlist(){
 function renderSettings(){
   const s=STATE.settings||{};
   $('s-case').value=s.case_price; $('s-mold').value=s.mold_cost; $('s-unit').value=s.unit_cost;
+  $('s-minprice').value=s.min_device_price??1200;
   $('s-freq').value=s.scouting_frequency||'diaria'; $('s-time').value=s.scouting_time||'08:00';
   $('s-hist').value=s.history_months||6;
 }
@@ -1054,6 +1057,7 @@ $('q-device').addEventListener('keydown',e=>{if(e.key==='Enter')searchDevice();}
 $('s-save').onclick=async()=>{
   const b=$('s-save'),msg=$('s-msg'); b.disabled=true; b.textContent='Salvando…'; msg.className='msg';
   const patch={case_price:+$('s-case').value,mold_cost:+$('s-mold').value,unit_cost:+$('s-unit').value,
+    min_device_price:+$('s-minprice').value,
     scouting_frequency:$('s-freq').value,scouting_time:$('s-time').value,history_months:+$('s-hist').value};
   const r=await post('/api/settings',patch);
   if(r.ok&&r.state&&!r.state.loading){STATE=r.state;renderAll();switchTab('config');

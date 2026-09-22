@@ -139,6 +139,11 @@ def aggregate_by_model(rows: list[dict]) -> list[dict]:
             a["_best"] = r["source_rank"]
             a["device_raw"], a["price"] = r["title"], r["price"]
             a["rating"], a["brand"] = r["rating"], r["brand"] or a["brand"]
+        # O Sorftime manda preco nulo em alguns anuncios (7 dos 62 modelos da
+        # coleta de 16/09). Se o ASIN lider for um deles, herda o preco de outra
+        # variante: sem preco o modelo escapa do filtro de preco minimo.
+        if a["price"] is None and r["price"] is not None:
+            a["price"] = r["price"]
         if r["online_date"] and (not a["online_date"] or r["online_date"] < a["online_date"]):
             a["online_date"] = r["online_date"]
 

@@ -190,3 +190,24 @@ class TestFiltroDeNaoCelular(unittest.TestCase):
         rows = sorftime.parse_products(reais, fora)
         self.assertEqual(fora, [])
         self.assertEqual(len(rows), 2)
+
+
+class TestPrecoAusente(unittest.TestCase):
+    """O Sorftime manda preco nulo em alguns anuncios; sem preco o modelo
+    escapa do filtro de preco minimo do aparelho."""
+
+    RAW = [
+        {"asin": "LIDER", "title": "Smartphone Motorola Edge 70 Pro 5G 512GB",
+         "brand": "Motorola", "monthly_sales_volume": "100", "price": None},
+        {"asin": "VARIANTE", "title": "Smartphone Motorola Edge 70 Pro 5G 256GB",
+         "brand": "Motorola", "monthly_sales_volume": "25", "price": 3999.0},
+    ]
+
+    def test_herda_o_preco_de_outra_variante(self):
+        agg = sorftime.aggregate_by_model(sorftime.parse_products(self.RAW))
+        self.assertEqual(agg[0]["price"], 3999.0)
+
+    def test_preco_do_lider_continua_tendo_precedencia(self):
+        raw = [dict(self.RAW[0], price=3499.0), self.RAW[1]]
+        agg = sorftime.aggregate_by_model(sorftime.parse_products(raw))
+        self.assertEqual(agg[0]["price"], 3499.0)
