@@ -218,7 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": "'devices' deve ser uma lista."}, 400)
             return
         try:
-            result = catalog.ingest(devices, reset=bool(body.get("reset")))
+            result = catalog.ingest(devices, reset=bool(body.get("reset")),
+                                    reset_cache=bool(body.get("reset_cache")))
         except ValueError as e:
             self._json({"ok": False, "error": str(e)}, 400)
             return

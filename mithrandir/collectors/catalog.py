@@ -95,8 +95,18 @@ def _chaves_da_ia(rows: list, ai=None) -> dict:
         return {}
 
 
-def ingest(rows: list, reset: bool = False, ai=None) -> dict:
-    """Aplica uma pagina do catalogo. `reset` comeca do zero (1a pagina)."""
+def ingest(rows: list, reset: bool = False, ai=None,
+           reset_cache: bool = False) -> dict:
+    """Aplica uma pagina do catalogo. `reset` comeca o catalogo do zero (1a pagina).
+
+    `reset_cache` limpa tambem o cache de titulos da IA, forcando re-derivar tudo.
+    Existe porque o cache guarda decisoes tomadas em versoes anteriores do codigo:
+    quando a regra de normalizacao muda (ou quando havia bug, como o sorteio de
+    resposta que dava 441/427 modelos), sem limpar o cache a correcao nao alcanca
+    o que ja estava gravado. Custa ~2min de IA; use quando algo parecer errado.
+    """
+    if reset_cache:
+        store.set_cached(CACHE_TITULOS, {})
     descartados: list[str] = []
     pagina = parse_devices(rows, _chaves_da_ia(rows, ai), descartados)
     if not pagina and not reset:

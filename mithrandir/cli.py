@@ -185,7 +185,9 @@ def cmd_ingest_catalog(args):
     for i in range(0, len(raw), pagina):
         lote = raw[i:i + pagina]
         res = request_json("POST", alvo, headers={"Authorization": f"Bearer {token}"},
-                           json_body={"devices": lote, "reset": i == 0}, timeout=180)
+                           json_body={"devices": lote, "reset": i == 0,
+                                      "reset_cache": i == 0 and "--rebuild" in args},
+                           timeout=300)
         ing = (res or {}).get("ingested") or {}
         total = ing.get("modelos_no_catalogo", total)
         print(f"  pagina {i // pagina + 1}: {len(lote)} registros -> "
