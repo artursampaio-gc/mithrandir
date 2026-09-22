@@ -111,6 +111,17 @@ def clean_titles(ai, titles: list[str], cache: dict | None = None,
 
     Titulos ja resolvidos antes vem do `cache` (a coleta semanal repete quase
     tudo, entao da segunda rodada em diante quase nao ha chamada).
+
+    ⚠️ Quando a IA responde mas NAO resolve um titulo (nao devolveu o item, ou a
+    resposta caiu no guard-rail), fica registrado `None` = "use a regra". Sem
+    isso, so o que a IA acertou ia para o cache e todo o resto era re-perguntado
+    a cada rodada — com resposta diferente cada vez. Foi assim que duas ingestoes
+    do MESMO arquivo deram 441 e 427 modelos, e o iPhone 13 (com capinha desde
+    2021) voltou a aparecer como candidato. Decisao nao registrada e decisao
+    sorteada de novo.
+
+    Lote que FALHOU (rede, JSON torto) nao marca nada: ai o certo e tentar de
+    novo na proxima, nao congelar a resposta da regra para sempre.
     """
     cache = cache if cache is not None else {}
     out = {t: cache[t] for t in titles if t in cache}
@@ -122,27 +133,33 @@ def clean_titles(ai, titles: list[str], cache: dict | None = None,
     # Em paralelo: em serie, 99 titulos levavam 53s e a ingestao inteira tem os
     # 60s do Vercel. Um lote que falha nao derruba os outros.
     with ThreadPoolExecutor(max_workers=min(4, len(lotes))) as ex:
-        for lote, itens in zip(lotes, ex.map(lambda l: _pedir_lote(ai, l, descarte), lotes)):
-            for item in itens:
-                try:
-                    titulo = lote[int(item["n"]) - 1]
-                except (KeyError, ValueError, TypeError, IndexError):
-                    continue
-                chave = _formatar(str(item.get("chave", "")).strip().upper())
-                if chave and not _compativel(chave, titulo):
-                    print(f"[normalize_ai] descartada (incompativel com a regra): "
-                          f"{chave!r} <- {titulo[:60]!r}")
-                    continue
-                out[titulo] = chave      # "" = nao e celular
+        respostas = list(ex.map(lambda l: _pedir_lote(ai, l, descarte), lotes))
+
+    for lote, (itens, respondeu) in zip(lotes, respostas):
+        for item in itens:
+            try:
+                titulo = lote[int(item["n"]) - 1]
+            except (KeyError, ValueError, TypeError, IndexError):
+                continue
+            chave = _formatar(str(item.get("chave", "")).strip().upper())
+            if chave and not _compativel(chave, titulo):
+                print(f"[normalize_ai] descartada (incompativel com a regra): "
+                      f"{chave!r} <- {titulo[:60]!r}")
+                continue
+            out[titulo] = chave      # "" = nao e celular
+        if respondeu:
+            for t in lote:
+                out.setdefault(t, None)   # None = a IA nao resolveu, use a regra
     return out
 
 
-def _pedir_lote(ai, lote: list[str], descarte: str = DESCARTE_ANUNCIO) -> list[dict]:
+def _pedir_lote(ai, lote: list[str], descarte: str = DESCARTE_ANUNCIO):
+    """(itens, respondeu). `respondeu=False` = a chamada falhou: nao registra nada."""
     lista = "\n".join(f"{n}. {t}" for n, t in enumerate(lote, 1))
     try:
         data = ai.complete_json(_PROMPT.format(lista=lista, regra_descarte=descarte),
                                 system=_SYSTEM, timeout=90)
-        return data.get("itens") or []
+        return (data.get("itens") or []), True
     except Exception as e:
         print(f"[normalize_ai] lote falhou ({e}); usando as regras nele.")
-        return []
+        return [], False

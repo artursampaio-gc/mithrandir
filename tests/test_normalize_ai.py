@@ -70,9 +70,10 @@ class TestCleanTitles(unittest.TestCase):
         ai = FakeAI({t: ""})
         self.assertEqual(normalize_ai.clean_titles(ai, [t])[t], "")
 
-    def test_resposta_incompativel_nao_entra(self):
+    def test_resposta_incompativel_nao_vira_chave(self):
         ai = FakeAI({self.SUJO: "SAMSUNG S24"})     # marca trocada
-        self.assertNotIn(self.SUJO, normalize_ai.clean_titles(ai, [self.SUJO]))
+        # registrado como None (= use a regra), nunca com a chave da IA
+        self.assertIsNone(normalize_ai.clean_titles(ai, [self.SUJO])[self.SUJO])
 
     def test_falha_do_proxy_nao_derruba(self):
         ai = FakeAI({}, falha=True)
@@ -112,6 +113,38 @@ class TestIngestaoUsaAsChaves(unittest.TestCase):
                 "brand": "Samsung", "monthly_sales_volume": "6285"}]
         rows = sorftime.parse_products(raw, chaves={})
         self.assertEqual(rows[0]["canonical_model"], "SAMSUNG A17")
+
+
+class TestCacheDeterminismo(unittest.TestCase):
+    """Duas ingestoes do MESMO arquivo davam 441 e 427 modelos, e o iPhone 13
+    (capinha desde 2021) voltava a aparecer como candidato: so o que a IA
+    acertava ia para o cache, e o resto era re-perguntado a cada rodada."""
+
+    SUJO = "Smartphone Motorola Edge 70 Crystals by Swarovski 512GB"
+
+    def test_titulo_que_a_ia_nao_resolveu_fica_registrado(self):
+        ai = FakeAI({})                      # responde, mas sem item para o titulo
+        out = normalize_ai.clean_titles(ai, [self.SUJO])
+        self.assertIn(self.SUJO, out)        # registrado...
+        self.assertIsNone(out[self.SUJO])    # ...como "use a regra"
+
+    def test_resposta_incompativel_tambem_fica_registrada(self):
+        ai = FakeAI({self.SUJO: "SAMSUNG S24"})   # cai no guard-rail
+        out = normalize_ai.clean_titles(ai, [self.SUJO])
+        self.assertIsNone(out[self.SUJO])
+
+    def test_registrado_nao_e_perguntado_de_novo(self):
+        ai = FakeAI({})
+        cache = normalize_ai.clean_titles(ai, [self.SUJO])
+        chamadas = ai.chamadas
+        normalize_ai.clean_titles(ai, [self.SUJO], cache)
+        self.assertEqual(ai.chamadas, chamadas)   # sem nova chamada
+
+    def test_lote_que_falhou_nao_congela_a_resposta(self):
+        # falha de rede tem que ser retentada, nao virar decisao permanente
+        ai = FakeAI({}, falha=True)
+        out = normalize_ai.clean_titles(ai, [self.SUJO])
+        self.assertNotIn(self.SUJO, out)
 
 
 if __name__ == "__main__":
