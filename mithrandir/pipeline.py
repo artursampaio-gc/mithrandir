@@ -61,6 +61,19 @@ def _filtra_por_preco(cands: list[Candidate], minimo) -> list[Candidate]:
             or c.marketplace.price >= minimo]
 
 
+def _filtra_candidatos(cands: list[Candidate], st: dict) -> list[Candidate]:
+    """Deixa na lista so o que E candidato a desenvolvimento.
+
+    Aparelho para o qual a Gocase JA TEM capinha nao e candidato — ponto. Antes
+    ele so levava penalidade no score e caia para o fim da lista, entao 31 dos 50
+    continuavam aparecendo (iPhone 13, que tem capinha desde 2021, entre eles). A
+    flag e a penalidade continuam existindo para o calendario e para o one-pager;
+    o que muda e que a aba Candidatos nao lista mais quem ja esta resolvido.
+    """
+    cands = [c for c in cands if not c.already_have_case]
+    return _filtra_por_preco(cands, st.get("min_device_price"))
+
+
 def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
     cfg = cfg or load_config()
     ai = AIClient(cfg.ai)
@@ -143,8 +156,7 @@ def run_pipeline(cfg: Config | None = None) -> list[Candidate]:
                 case_price=st["case_price"], mold_cost=st["mold_cost"],
                 unit_cost=st["unit_cost"], desde=desde)
 
-    ranked = rank_by_breakeven(_filtra_por_preco(list(candidates.values()),
-                                                 st.get("min_device_price")))
+    ranked = rank_by_breakeven(_filtra_candidatos(list(candidates.values()), st))
     try:
         save_run(ranked, cfg.mock_mode)  # historico local (ignorado em FS read-only)
     except Exception:

@@ -73,3 +73,30 @@ class TestFiltroDePrecoDoAparelho(unittest.TestCase):
     def test_setting_persiste(self):
         from mithrandir.settings import DEFAULTS
         self.assertEqual(DEFAULTS["min_device_price"], 1200.0)
+
+
+class TestCandidatoComCapinhaSaiDaLista(unittest.TestCase):
+    """Aparelho para o qual ja temos capinha nao e candidato a desenvolvimento.
+    Antes so levava penalidade e caia para o fim — 31 dos 50 seguiam na lista."""
+
+    def _cand(self, nome, tem_capinha=False, preco=2000.0):
+        from mithrandir.models import Candidate, MarketplaceSignal
+        c = Candidate(canonical_model=nome)
+        c.already_have_case = tem_capinha
+        c.marketplace = MarketplaceSignal(source="amazon", price=preco)
+        return c
+
+    def test_remove_quem_ja_tem_capinha(self):
+        from mithrandir.pipeline import _filtra_candidatos
+        cands = [self._cand("APPLE 13", True), self._cand("MOTOROLA EDGE 70")]
+        fica = {c.canonical_model for c in _filtra_candidatos(cands, {})}
+        self.assertEqual(fica, {"MOTOROLA EDGE 70"})
+
+    def test_os_dois_filtros_valem_juntos(self):
+        from mithrandir.pipeline import _filtra_candidatos
+        cands = [self._cand("TEM CAPINHA CARO", True, 3000.0),
+                 self._cand("SEM CAPINHA BARATO", False, 500.0),
+                 self._cand("SEM CAPINHA CARO", False, 3000.0)]
+        fica = {c.canonical_model
+                for c in _filtra_candidatos(cands, {"min_device_price": 1200})}
+        self.assertEqual(fica, {"SEM CAPINHA CARO"})
